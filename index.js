@@ -250,11 +250,13 @@ app.post("/cotizar", async (req, res) => {
     const datosClienteTab = page.getByText("Datos del Cliente", { exact: true });
     await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
     await datosClienteTab.click();
-    const clienteInput = await localizarVisibleEntreCandidatos(
+    const clienteBox = await localizarVisibleEntreCandidatos(
       page,
-      `//label[contains(text(),"Cliente:")]/following::input[1]`
+      `//label[contains(text(),"Cliente:")]/following::*[self::input or self::span or self::div][1]`
     );
-    await clienteInput.fill("CLIENTE EJEMPLO PARA COTIZAR");
+    await clienteBox.click();
+    await page.keyboard.type("CLIENTE EJEMPLO", { delay: 50 });
+    await page.waitForTimeout(1000);
     await page.getByText("CLIENTE EJEMPLO PARA COTIZAR", { exact: false }).first().click();
 
     // Esperamos a que la app termine de procesar la selección del cliente
