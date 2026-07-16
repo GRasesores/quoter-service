@@ -49,7 +49,7 @@ async function abrirCotizadorLogueado() {
   await page.waitForSelector("text=Cotizaciones", { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1500);
 
-  const datosUnidadTab = page.getByText("Datos de la Unidad", { exact: true });
+  const datosUnidadTab = page.getByRole("tab", { name: "Datos de la Unidad" });
   await datosUnidadTab.waitFor({ state: "visible", timeout: 20000 });
   await datosUnidadTab.click();
   await page.waitForTimeout(500);
@@ -215,16 +215,20 @@ app.post("/cotizar", async (req, res) => {
     const page = sesion.page;
 
     // ---------- TAB: DATOS DEL CLIENTE ----------
-    const datosClienteTab = page.getByText("Datos del Cliente", { exact: true });
+    const datosClienteTab = page.getByRole("tab", { name: "Datos del Cliente" });
     await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
     await datosClienteTab.click();
     const clienteInput = page.locator("input").first();
     await clienteInput.fill("CLIENTE EJEMPLO PARA COTIZAR");
     await page.getByText("CLIENTE EJEMPLO PARA COTIZAR", { exact: false }).first().click();
 
+    // Esperamos a que la app termine de procesar la selección del cliente
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(2000);
+
     // ---------- TAB: DATOS DE LA UNIDAD ----------
-    const datosUnidadTab = page.getByText("Datos de la Unidad", { exact: true });
-    await datosUnidadTab.waitFor({ state: "visible", timeout: 20000 });
+    const datosUnidadTab = page.getByRole("tab", { name: "Datos de la Unidad" });
+    await datosUnidadTab.waitFor({ state: "visible", timeout: 40000 });
     await datosUnidadTab.click();
     await page.waitForTimeout(500);
 
@@ -254,15 +258,15 @@ app.post("/cotizar", async (req, res) => {
     await selectByLabel(page, "Flotilla", "Descuento Flotilla AA 11 A 20");
 
     // ---------- TAB: DETALLES DE COBERTURA ----------
-    const coberturaTab = page.getByText("Detalles de Cobertura", { exact: true });
-    await coberturaTab.waitFor({ state: "visible", timeout: 20000 });
+    const coberturaTab = page.getByRole("tab", { name: "Detalles de Cobertura" });
+    await coberturaTab.waitFor({ state: "visible", timeout: 30000 });
     await coberturaTab.click();
     await page.waitForTimeout(500);
     await selectByLabel(page, "Tipo de Cobertura", datos.tipoPoliza);
 
     // ---------- TAB: INFORMACION DE LA COTIZACION ----------
-    const infoCotizacionTab = page.getByText("Información de la Cotización", { exact: true });
-    await infoCotizacionTab.waitFor({ state: "visible", timeout: 20000 });
+    const infoCotizacionTab = page.getByRole("tab", { name: "Información de la Cotización" });
+    await infoCotizacionTab.waitFor({ state: "visible", timeout: 30000 });
     await infoCotizacionTab.click();
     await page.waitForTimeout(500);
     await selectByLabel(page, "Conducto de Cobro", datos.conductoCobro || "Tarjeta de Crédito");
