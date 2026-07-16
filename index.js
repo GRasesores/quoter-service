@@ -256,8 +256,11 @@ app.post("/cotizar", async (req, res) => {
     );
     await clienteBox.click();
     await page.keyboard.type("CLIENTE EJEMPLO", { delay: 50 });
+    await page.waitForTimeout(1500);
+    await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Enter");
     await page.waitForTimeout(1000);
-    await page.getByText("CLIENTE EJEMPLO PARA COTIZAR", { exact: false }).first().click();
 
     // Esperamos a que la app termine de procesar la selección del cliente
     await page.waitForLoadState("networkidle").catch(() => {});
