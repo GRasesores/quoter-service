@@ -51,7 +51,7 @@ async function abrirCotizadorLogueado() {
 
   // Al entrar a #/quotes caemos en la LISTA de cotizaciones existentes,
   // hay que dar clic en "+ Nuevo" para abrir el formulario real
-  const btnNuevo = page.getByText("Nuevo", { exact: false }).first();
+  const btnNuevo = page.getByRole("button", { name: "Nuevo" });
   await btnNuevo.waitFor({ state: "visible", timeout: 20000 });
   await btnNuevo.click();
   await page.waitForTimeout(1500);
