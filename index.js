@@ -202,6 +202,7 @@ app.get("/catalogo/versiones", async (req, res) => {
 app.post("/cotizar", async (req, res) => {
   const datos = req.body;
   let browser;
+  let page;
 
   try {
     datos.marca = normalizar(datos.marca);
@@ -212,10 +213,10 @@ app.post("/cotizar", async (req, res) => {
 
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
-    const page = sesion.page;
+    page = sesion.page;
 
     // ---------- TAB: DATOS DEL CLIENTE ----------
-    const datosClienteTab = page.getByRole("tab", { name: "Datos del Cliente" });
+    const datosClienteTab = page.getByText("Datos del Cliente", { exact: true });
     await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
     await datosClienteTab.click();
     const clienteInput = page.locator("input").first();
@@ -227,7 +228,7 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForTimeout(2000);
 
     // ---------- TAB: DATOS DE LA UNIDAD ----------
-    const datosUnidadTab = page.getByRole("tab", { name: "Datos de la Unidad" });
+    const datosUnidadTab = page.getByText("Datos de la Unidad", { exact: true });
     await datosUnidadTab.waitFor({ state: "visible", timeout: 40000 });
     await datosUnidadTab.click();
     await page.waitForTimeout(500);
@@ -258,14 +259,14 @@ app.post("/cotizar", async (req, res) => {
     await selectByLabel(page, "Flotilla", "Descuento Flotilla AA 11 A 20");
 
     // ---------- TAB: DETALLES DE COBERTURA ----------
-    const coberturaTab = page.getByRole("tab", { name: "Detalles de Cobertura" });
+    const coberturaTab = page.getByText("Detalles de Cobertura", { exact: true });
     await coberturaTab.waitFor({ state: "visible", timeout: 30000 });
     await coberturaTab.click();
     await page.waitForTimeout(500);
     await selectByLabel(page, "Tipo de Cobertura", datos.tipoPoliza);
 
     // ---------- TAB: INFORMACION DE LA COTIZACION ----------
-    const infoCotizacionTab = page.getByRole("tab", { name: "Información de la Cotización" });
+    const infoCotizacionTab = page.getByText("Información de la Cotización", { exact: true });
     await infoCotizacionTab.waitFor({ state: "visible", timeout: 30000 });
     await infoCotizacionTab.click();
     await page.waitForTimeout(500);
@@ -293,9 +294,22 @@ app.post("/cotizar", async (req, res) => {
 
     return res.json({ ok: true, datosEnviados: datos, resultado });
   } catch (err) {
+    let screenshotGuardado = false;
+    if (page) {
+      try {
+        await page.screenshot({ path: "public/debug.png", fullPage: true });
+        screenshotGuardado = true;
+      } catch (e) {
+        console.error("No se pudo guardar la captura de depuración:", e.message);
+      }
+    }
     if (browser) await browser.close();
     console.error("Error cotizando:", err);
-    return res.status(500).json({ ok: false, error: err.message });
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+      captura: screenshotGuardado ? "/debug.png" : null,
+    });
   }
 });
 
