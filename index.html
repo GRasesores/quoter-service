@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cotizacion de Seguro de Auto - G&R NEXUS</title>
+<style>
+  :root {
+    --navy: #0a1128;
+    --navy2: #10182f;
+    --gold: #c8a96e;
+    --text: #eae6da;
+    --muted: #9a97a0;
+    --error: #e05252;
+  }
+  .logo { display: block; margin: 0 auto 20px; max-width: 140px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  h1 {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 24px; }
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 16px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  select, input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--navy2);
+    border: 1px solid #2a3252;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 15px;
+  }
+  select:disabled { opacity: 0.4; cursor: not-allowed; }
+  button {
+    width: 100%;
+    margin-top: 28px;
+    padding: 14px;
+    background: var(--gold);
+    color: var(--navy);
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #estado {
+    margin-top: 20px;
+    padding: 14px;
+    border-radius: 6px;
+    display: none;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  #estado.cargando { display: block; background: #1b2444; color: var(--text); }
+  #estado.error { display: block; background: rgba(224,82,82,0.15); color: var(--error); border: 1px solid var(--error); }
+  #estado.exito { display: block; background: rgba(200,169,110,0.12); color: var(--gold); border: 1px solid var(--gold); }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--muted);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: girar 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img src="/logo.png" alt="Maps Seguros" class="logo">
+  <h1>Cotizacion de Seguro de Auto</h1>
+  <p class="sub">Llena tus datos y los de tu vehiculo</p>
+
+  <form id="form-cotizacion">
+    <label>Marca</label>
+    <select id="marca" required><option value="">Cargando marcas...</option></select>
+
+    <label>Submarca (Modelo)</label>
+    <select id="submarca" disabled required><option value="">Selecciona una marca primero</option></select>
+
+    <label>Año</label>
+    <select id="anio" disabled required><option value="">Selecciona una submarca primero</option></select>
+
+    <label>Version</label>
+    <select id="version" disabled required><option value="">Selecciona un año primero</option></select>
+
+    <label>Uso</label>
+    <select id="uso" required></select>
+
+    <label>Tipo de Poliza</label>
+    <select id="tipoPoliza" required>
+      <option value="RC">RC</option>
+      <option value="LIMITADA">Limitada</option>
+      <option value="AMPLIA">Amplia</option>
+    </select>
+
+    <label>Nombre completo</label>
+    <input type="text" id="nombreCompleto" required>
+
+    <label>Codigo postal</label>
+    <input type="text" id="codigoPostal" required>
+
+    <label>Telefono WhatsApp</label>
+    <input type="tel" id="telefono" required>
+
+    <label>Correo electronico</label>
+    <input type="email" id="correo" required>
+
+    <button type="submit" id="btn-submit">Cotizar</button>
+  </form>
+
+  <div id="estado"></div>
+</div>
+
+<script>
+const USOS = [
+  "PARTICULAR","EXCLUSIVO UBER","EXCLUSIVO DIDI","CONDUCTOR APP","EXTENSION APP",
+  "INDRIVER","BOLT","MIXTO","TAXI","MOTOTAXI","CARGA A y B PESADO","CARGA C",
+  "CARGA LIGERA","REPARTO","REPARTO APP","AUTO ESCUELA","EMERGENCIAS",
+  "GASTOS FUNERARIOS","GASTOS MEDICOS","GRUA","INYECCION DE PRIMA",
+  "RC OBLIGATORIA","RENTA DIARIA","SEGURO AUTOPISTA","SEGURO DE VIDA",
+  "TRANSFER","TRANSPORTE DE PERSONAL","TRANSPORTE ESCOLAR",
+  "TRANSPORTE PUBLICO","TRANSPORTE TURISMO"
+];
+
+const $ = (id) => document.getElementById(id);
+const estado = $("estado");
+
+function llenarSelect(select, opciones, placeholder) {
+  select.innerHTML = "";
+  const optVacia = document.createElement("option");
+  optVacia.value = "";
+  optVacia.textContent = placeholder;
+  select.appendChild(optVacia);
+  opciones.forEach((op) => {
+    const o = document.createElement("option");
+    o.value = op;
+    o.textContent = op;
+    select.appendChild(o);
+  });
+}
+
+function resetear(select, placeholder) {
+  select.innerHTML = `<option value="">${placeholder}</option>`;
+  select.disabled = true;
+}
+
+// Uso: lista estatica, no depende de Maps Seguros en vivo
+llenarSelect($("uso"), USOS, "Selecciona una opcion");
+
+// Carga inicial de marcas
+fetch("/catalogo/marcas")
+  .then((r) => r.json())
+  .then((data) => {
+    if (!data.ok) throw new Error(data.error || "No se pudieron cargar las marcas");
+    llenarSelect($("marca"), data.marcas, "Selecciona una marca");
+  })
+  .catch((e) => {
+    $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
+  });
+
+$("marca").addEventListener("change", () => {
+  const marca = $("marca").value;
+  resetear($("submarca"), "Cargando...");
+  resetear($("anio"), "Selecciona una submarca primero");
+  resetear($("version"), "Selecciona un año primero");
+  if (!marca) return;
+  fetch(`/catalogo/submarcas?marca=${encodeURIComponent(marca)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      llenarSelect($("submarca"), data.submarcas, "Selecciona una submarca");
+      $("submarca").disabled = false;
+    })
+    .catch((e) => {
+      $("submarca").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    });
+});
+
+$("submarca").addEventListener("change", () => {
+  const marca = $("marca").value;
+  const submarca = $("submarca").value;
+  resetear($("anio"), "Cargando...");
+  resetear($("version"), "Selecciona un año primero");
+  if (!submarca) return;
+  fetch(`/catalogo/anios?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      llenarSelect($("anio"), data.anios, "Selecciona un año");
+      $("anio").disabled = false;
+    })
+    .catch((e) => {
+      $("anio").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    });
+});
+
+$("anio").addEventListener("change", () => {
+  const marca = $("marca").value;
+  const submarca = $("submarca").value;
+  const anio = $("anio").value;
+  resetear($("version"), "Cargando...");
+  if (!anio) return;
+  fetch(`/catalogo/versiones?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&anio=${encodeURIComponent(anio)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      llenarSelect($("version"), data.versiones, "Selecciona una version");
+      $("version").disabled = false;
+    })
+    .catch((e) => {
+      $("version").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    });
+});
+
+$("form-cotizacion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("btn-submit");
+  btn.disabled = true;
+  estado.className = "cargando";
+  estado.innerHTML = '<span class="spinner"></span>Cotizando en Maps Seguros, esto puede tardar hasta 1 minuto...';
+
+  const payload = {
+    marca: $("marca").value,
+    modelo: $("submarca").value,
+    anio: $("anio").value,
+    version: $("version").value,
+    uso: $("uso").value,
+    tipoPoliza: $("tipoPoliza").value,
+    nombreCompleto: $("nombreCompleto").value,
+    codigoPostal: $("codigoPostal").value,
+    telefono: $("telefono").value,
+    correo: $("correo").value,
+  };
+
+  try {
+    const configRes = await fetch("/config");
+    const config = await configRes.json();
+    if (!config.webhookUrl) throw new Error("No hay webhookUrl configurada en el servidor (variable N8N_WEBHOOK_URL)");
+
+    const res = await fetch(config.webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`El flujo de n8n respondio con error ${res.status}`);
+
+    estado.className = "exito";
+    estado.textContent = "Cotizacion enviada correctamente. En breve recibiras el detalle.";
+  } catch (err) {
+    estado.className = "error";
+    estado.textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
