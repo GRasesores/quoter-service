@@ -235,7 +235,7 @@ app.post("/cotizar", async (req, res) => {
     await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
     await datosClienteTab.click();
     const clienteInput = page.locator(
-      `xpath=//label[contains(text(),"Cliente")]/following::input[1]`
+      `xpath=//label[contains(text(),"Cliente:")]/following::input[1]`
     );
     await clienteInput.waitFor({ state: "visible", timeout: 15000 });
     await clienteInput.fill("CLIENTE EJEMPLO PARA COTIZAR");
