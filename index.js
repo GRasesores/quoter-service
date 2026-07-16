@@ -59,12 +59,15 @@ async function abrirCotizadorLogueado() {
   return { browser, page };
 }
 
-// Navega a la pestaña "Datos de la Unidad" (usado por los endpoints de catálogo,
-// que no necesitan pasar por "Datos del Cliente")
+// Navega a la pestaña "Datos de la Unidad" y asegura que "Tipo de Transporte"
+// quede en "Automóvil" (si no se fija explícito, el catálogo de Marca puede
+// cargar el de motocicletas/camiones en vez de autos)
 async function irADatosDeLaUnidad(page) {
   const tab = page.getByText("Datos de la Unidad", { exact: true });
   await tab.waitFor({ state: "visible", timeout: 30000 });
   await tab.click();
+  await page.waitForTimeout(500);
+  await selectByLabel(page, "Tipo de Transporte", "Automóvil");
   await page.waitForTimeout(500);
 }
 
@@ -279,6 +282,8 @@ app.post("/cotizar", async (req, res) => {
     const datosUnidadTab = page.getByText("Datos de la Unidad", { exact: true });
     await datosUnidadTab.waitFor({ state: "visible", timeout: 40000 });
     await datosUnidadTab.click();
+    await page.waitForTimeout(500);
+    await selectByLabel(page, "Tipo de Transporte", "Automóvil");
     await page.waitForTimeout(500);
 
     await selectByLabel(page, "Marca", datos.marca);
