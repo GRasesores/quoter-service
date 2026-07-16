@@ -95,6 +95,22 @@ async function getOptionsByLabel(page, labelText) {
     .filter((o) => o && !o.toLowerCase().includes("seleccione"));
 }
 
+// Selecciona el candidato visible entre varios elementos que matchean el mismo xpath
+// (útil cuando hay un elemento "proxy" de accesibilidad oculto mezclado con el real)
+async function localizarVisibleEntreCandidatos(page, xpath, timeoutMs = 15000) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    const candidatos = page.locator(`xpath=${xpath}`);
+    const total = await candidatos.count();
+    for (let i = 0; i < total; i++) {
+      const el = candidatos.nth(i);
+      if (await el.isVisible().catch(() => false)) return el;
+    }
+    await page.waitForTimeout(500);
+  }
+  throw new Error(`No se encontró ningún elemento visible para: ${xpath}`);
+}
+
 // -----------------------------------------------------------------------
 // GET /catalogo/marcas
 // -----------------------------------------------------------------------
@@ -234,10 +250,10 @@ app.post("/cotizar", async (req, res) => {
     const datosClienteTab = page.getByText("Datos del Cliente", { exact: true });
     await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
     await datosClienteTab.click();
-    const clienteInput = page.locator(
-      `xpath=//label[contains(text(),"Cliente:")]/following::input[@type="text"][1]`
+    const clienteInput = await localizarVisibleEntreCandidatos(
+      page,
+      `//label[contains(text(),"Cliente:")]/following::input[1]`
     );
-    await clienteInput.waitFor({ state: "visible", timeout: 15000 });
     await clienteInput.fill("CLIENTE EJEMPLO PARA COTIZAR");
     await page.getByText("CLIENTE EJEMPLO PARA COTIZAR", { exact: false }).first().click();
 
