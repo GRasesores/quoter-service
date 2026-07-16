@@ -30,8 +30,8 @@ const normalizar = (v) => (v || "").toString().trim().toUpperCase();
 // Helpers compartidos de Playwright
 // -----------------------------------------------------------------------
 
-// Abre sesión en Maps Seguros y deja la página lista en la pestaña
-// "Datos de la Unidad" (donde viven los catálogos del vehículo)
+// Abre sesión en Maps Seguros y deja la página lista en Cotizaciones
+// (la pestaña "Datos del Cliente" queda activa por defecto)
 async function abrirCotizadorLogueado() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -49,12 +49,16 @@ async function abrirCotizadorLogueado() {
   await page.waitForSelector("text=Cotizaciones", { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1500);
 
-  const datosUnidadTab = page.getByRole("tab", { name: "Datos de la Unidad" });
-  await datosUnidadTab.waitFor({ state: "visible", timeout: 20000 });
-  await datosUnidadTab.click();
-  await page.waitForTimeout(500);
-
   return { browser, page };
+}
+
+// Navega a la pestaña "Datos de la Unidad" (usado por los endpoints de catálogo,
+// que no necesitan pasar por "Datos del Cliente")
+async function irADatosDeLaUnidad(page) {
+  const tab = page.getByText("Datos de la Unidad", { exact: true });
+  await tab.waitFor({ state: "visible", timeout: 30000 });
+  await tab.click();
+  await page.waitForTimeout(500);
 }
 
 // Selecciona una opción de un <select> ubicado justo después de una etiqueta visible
@@ -95,6 +99,7 @@ app.get("/catalogo/marcas", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
+    await irADatosDeLaUnidad(sesion.page);
     const marcas = await getOptionsByLabel(sesion.page, "Marca");
     await browser.close();
     cacheSet("marcas", marcas);
@@ -121,6 +126,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
+    await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
     const submarcas = await getOptionsByLabel(sesion.page, "Submarca");
     await browser.close();
@@ -151,6 +157,7 @@ app.get("/catalogo/anios", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
+    await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
     await selectByLabel(sesion.page, "Submarca", submarca);
     const anios = await getOptionsByLabel(sesion.page, "Modelo");
@@ -182,6 +189,7 @@ app.get("/catalogo/versiones", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
+    await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
     await selectByLabel(sesion.page, "Submarca", submarca);
     await selectByLabel(sesion.page, "Modelo", anio);
