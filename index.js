@@ -68,19 +68,28 @@ async function irADatosDeLaUnidad(page) {
   await page.waitForTimeout(500);
 }
 
-// Selecciona una opción de un <select> ubicado justo después de una etiqueta visible
+// Selecciona una opción de un <select> ubicado justo después de una etiqueta visible.
+// Compara el texto normalizado (sin espacios extra, mayúsculas) para evitar fallos
+// por diferencias invisibles de formato en el catálogo de Maps Seguros.
 async function selectByLabel(page, labelText, optionLabel) {
   const select = page.locator(
     `xpath=//label[contains(text(),"${labelText}")]/following::select[1]`
   );
   await select.waitFor({ state: "visible", timeout: 10000 });
-  try {
-    await select.selectOption({ label: optionLabel });
-  } catch (e) {
+
+  const valorEncontrado = await select.evaluate((sel, buscado) => {
+    const normal = (s) => (s || "").replace(/\s+/g, " ").trim().toUpperCase();
+    const opt = Array.from(sel.options).find((o) => normal(o.text) === normal(buscado));
+    return opt ? opt.value : null;
+  }, optionLabel);
+
+  if (valorEncontrado === null) {
     throw new Error(
       `El valor "${optionLabel}" no existe en el catálogo de "${labelText}" de Maps Seguros. Verifica cómo está escrito exactamente en el cotizador.`
     );
   }
+
+  await select.selectOption(valorEncontrado);
 }
 
 // Lee todas las opciones visibles de un <select> ubicado tras una etiqueta
