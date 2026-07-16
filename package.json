@@ -1,0 +1,13 @@
+{
+  "name": "quoter-service",
+  "version": "1.0.0",
+  "description": "Microservicio que automatiza el login y cotizacion en Maps Seguros usando Playwright",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.47.0"
+  }
+}
