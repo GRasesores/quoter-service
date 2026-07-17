@@ -123,6 +123,20 @@ async function localizarVisibleEntreCandidatos(page, xpath, timeoutMs = 15000) {
   throw new Error(`No se encontró ningún elemento visible para: ${xpath}`);
 }
 
+// Espera a que un <select> dependiente termine de repoblarse (más de solo
+// la opción "-- Seleccione --") antes de seguir, en vez de una pausa fija
+async function esperarOpcionesCargadas(page, labelText, timeoutMs = 10000) {
+  const select = page
+    .locator(`xpath=//label[contains(text(),"${labelText}")]/following::select[1]`)
+    .first();
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    const count = await select.locator("option").count().catch(() => 0);
+    if (count > 1) return;
+    await page.waitForTimeout(300);
+  }
+}
+
 // -----------------------------------------------------------------------
 // GET /catalogo/marcas
 // -----------------------------------------------------------------------
@@ -163,7 +177,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Submarca");
     const submarcas = await getOptionsByLabel(sesion.page, "Submarca");
     await browser.close();
     cacheSet(key, submarcas);
@@ -195,9 +209,9 @@ app.get("/catalogo/anios", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Submarca");
     await selectByLabel(sesion.page, "Submarca", submarca);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Modelo");
     const anios = await getOptionsByLabel(sesion.page, "Modelo");
     await browser.close();
     cacheSet(key, anios);
@@ -229,11 +243,11 @@ app.get("/catalogo/versiones", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Submarca");
     await selectByLabel(sesion.page, "Submarca", submarca);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Modelo");
     await selectByLabel(sesion.page, "Modelo", anio);
-    await sesion.page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(sesion.page, "Version");
     const versiones = await getOptionsByLabel(sesion.page, "Version");
     await browser.close();
     cacheSet(key, versiones);
@@ -293,11 +307,11 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForTimeout(500);
 
     await selectByLabel(page, "Marca", datos.marca);
-    await page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(page, "Submarca");
     await selectByLabel(page, "Submarca", datos.modelo);
-    await page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(page, "Modelo");
     await selectByLabel(page, "Modelo", String(datos.anio));
-    await page.waitForTimeout(1200);
+    await esperarOpcionesCargadas(page, "Version");
     await selectByLabel(page, "Version", datos.version);
     await page.waitForTimeout(500);
     await selectByLabel(page, "Uso", datos.uso);
