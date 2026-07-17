@@ -75,9 +75,9 @@ async function irADatosDeLaUnidad(page) {
 // Compara el texto normalizado (sin espacios extra, mayúsculas) para evitar fallos
 // por diferencias invisibles de formato en el catálogo de Maps Seguros.
 async function selectByLabel(page, labelText, optionLabel) {
-  const select = page.locator(
-    `xpath=//label[contains(text(),"${labelText}")]/following::select[1]`
-  );
+  const select = page
+    .locator(`xpath=//label[contains(text(),"${labelText}")]/following::select[1]`)
+    .first();
   await select.waitFor({ state: "visible", timeout: 10000 });
 
   const valorEncontrado = await select.evaluate((sel, buscado) => {
@@ -97,9 +97,9 @@ async function selectByLabel(page, labelText, optionLabel) {
 
 // Lee todas las opciones visibles de un <select> ubicado tras una etiqueta
 async function getOptionsByLabel(page, labelText) {
-  const select = page.locator(
-    `xpath=//label[contains(text(),"${labelText}")]/following::select[1]`
-  );
+  const select = page
+    .locator(`xpath=//label[contains(text(),"${labelText}")]/following::select[1]`)
+    .first();
   await select.waitFor({ state: "visible", timeout: 15000 });
   const options = await select.locator("option").allTextContents();
   return options
