@@ -394,6 +394,33 @@ app.get("/config", (req, res) => {
   res.json({ webhookUrl: process.env.N8N_WEBHOOK_URL || "" });
 });
 
+// El formulario le habla a ESTE endpoint (mismo dominio, sin problema de CORS),
+// y aquí, servidor a servidor, se reenvía a n8n
+app.post("/enviar-cotizacion", async (req, res) => {
+  const webhookUrl = process.env.N8N_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return res.status(500).json({ ok: false, error: "N8N_WEBHOOK_URL no está configurada" });
+  }
+  try {
+    const respuestaN8n = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const texto = await respuestaN8n.text();
+    let datos;
+    try {
+      datos = JSON.parse(texto);
+    } catch {
+      datos = { textoCompleto: texto };
+    }
+    return res.status(respuestaN8n.status).json({ ok: respuestaN8n.ok, ...datos });
+  } catch (err) {
+    console.error("Error reenviando a n8n:", err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 3000;
