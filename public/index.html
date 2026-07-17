@@ -90,18 +90,19 @@
   <img src="/logo.png" alt="Maps Seguros" class="logo">
   <h1>Cotizacion de Seguro de Auto</h1>
   <p class="sub">Llena tus datos y los de tu vehiculo</p>
+  <p class="sub" style="font-size:13px">La primera vez que se elige una marca/modelo puede tardar hasta 30 segundos en cargar (las siguientes veces es instantaneo).</p>
 
   <form id="form-cotizacion">
-    <label>Marca</label>
+    <label>Marca <span class="spinner" id="spinner-marca" style="display:none"></span></label>
     <select id="marca" required><option value="">Cargando marcas...</option></select>
 
-    <label>Submarca (Modelo)</label>
+    <label>Submarca (Modelo) <span class="spinner" id="spinner-submarca" style="display:none"></span></label>
     <select id="submarca" disabled required><option value="">Selecciona una marca primero</option></select>
 
-    <label>Año</label>
+    <label>Año <span class="spinner" id="spinner-anio" style="display:none"></span></label>
     <select id="anio" disabled required><option value="">Selecciona una submarca primero</option></select>
 
-    <label>Version</label>
+    <label>Version <span class="spinner" id="spinner-version" style="display:none"></span></label>
     <select id="version" disabled required><option value="">Selecciona un año primero</option></select>
 
     <label>Uso</label>
@@ -168,7 +169,13 @@ function resetear(select, placeholder) {
 // Uso: lista estatica, no depende de Maps Seguros en vivo
 llenarSelect($("uso"), USOS, "Selecciona una opcion");
 
+function mostrarSpinner(id, mostrar) {
+  const el = document.getElementById(`spinner-${id}`);
+  if (el) el.style.display = mostrar ? "inline-block" : "none";
+}
+
 // Carga inicial de marcas
+mostrarSpinner("marca", true);
 fetch("/catalogo/marcas")
   .then((r) => r.json())
   .then((data) => {
@@ -177,7 +184,8 @@ fetch("/catalogo/marcas")
   })
   .catch((e) => {
     $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
-  });
+  })
+  .finally(() => mostrarSpinner("marca", false));
 
 $("marca").addEventListener("change", () => {
   const marca = $("marca").value;
@@ -185,6 +193,7 @@ $("marca").addEventListener("change", () => {
   resetear($("anio"), "Selecciona una submarca primero");
   resetear($("version"), "Selecciona un año primero");
   if (!marca) return;
+  mostrarSpinner("submarca", true);
   fetch(`/catalogo/submarcas?marca=${encodeURIComponent(marca)}`)
     .then((r) => r.json())
     .then((data) => {
@@ -194,7 +203,8 @@ $("marca").addEventListener("change", () => {
     })
     .catch((e) => {
       $("submarca").innerHTML = `<option value="">Error: ${e.message}</option>`;
-    });
+    })
+    .finally(() => mostrarSpinner("submarca", false));
 });
 
 $("submarca").addEventListener("change", () => {
@@ -203,6 +213,7 @@ $("submarca").addEventListener("change", () => {
   resetear($("anio"), "Cargando...");
   resetear($("version"), "Selecciona un año primero");
   if (!submarca) return;
+  mostrarSpinner("anio", true);
   fetch(`/catalogo/anios?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}`)
     .then((r) => r.json())
     .then((data) => {
@@ -212,7 +223,8 @@ $("submarca").addEventListener("change", () => {
     })
     .catch((e) => {
       $("anio").innerHTML = `<option value="">Error: ${e.message}</option>`;
-    });
+    })
+    .finally(() => mostrarSpinner("anio", false));
 });
 
 $("anio").addEventListener("change", () => {
@@ -221,6 +233,7 @@ $("anio").addEventListener("change", () => {
   const anio = $("anio").value;
   resetear($("version"), "Cargando...");
   if (!anio) return;
+  mostrarSpinner("version", true);
   fetch(`/catalogo/versiones?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&anio=${encodeURIComponent(anio)}`)
     .then((r) => r.json())
     .then((data) => {
@@ -230,7 +243,8 @@ $("anio").addEventListener("change", () => {
     })
     .catch((e) => {
       $("version").innerHTML = `<option value="">Error: ${e.message}</option>`;
-    });
+    })
+    .finally(() => mostrarSpinner("version", false));
 });
 
 $("form-cotizacion").addEventListener("submit", async (e) => {
@@ -260,7 +274,10 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
       body: JSON.stringify(payload),
     });
     const datos = await res.json();
-    if (!datos.ok) throw new Error(datos.error || `Error ${res.status}`);
+    if (!datos.ok) {
+      const motivo = datos.error || datos.message || `Error ${res.status}`;
+      throw new Error(`${motivo} (revisa que el workflow de n8n esté Activo)`);
+    }
 
     estado.className = "exito";
     estado.textContent = "Cotizacion enviada correctamente. En breve recibiras el detalle.";
