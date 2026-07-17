@@ -163,6 +163,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
+    await sesion.page.waitForTimeout(1200);
     const submarcas = await getOptionsByLabel(sesion.page, "Submarca");
     await browser.close();
     cacheSet(key, submarcas);
@@ -194,7 +195,9 @@ app.get("/catalogo/anios", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
+    await sesion.page.waitForTimeout(1200);
     await selectByLabel(sesion.page, "Submarca", submarca);
+    await sesion.page.waitForTimeout(1200);
     const anios = await getOptionsByLabel(sesion.page, "Modelo");
     await browser.close();
     cacheSet(key, anios);
@@ -226,8 +229,11 @@ app.get("/catalogo/versiones", async (req, res) => {
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page);
     await selectByLabel(sesion.page, "Marca", marca);
+    await sesion.page.waitForTimeout(1200);
     await selectByLabel(sesion.page, "Submarca", submarca);
+    await sesion.page.waitForTimeout(1200);
     await selectByLabel(sesion.page, "Modelo", anio);
+    await sesion.page.waitForTimeout(1200);
     const versiones = await getOptionsByLabel(sesion.page, "Version");
     await browser.close();
     cacheSet(key, versiones);
@@ -287,9 +293,13 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForTimeout(500);
 
     await selectByLabel(page, "Marca", datos.marca);
+    await page.waitForTimeout(1200);
     await selectByLabel(page, "Submarca", datos.modelo);
+    await page.waitForTimeout(1200);
     await selectByLabel(page, "Modelo", String(datos.anio));
+    await page.waitForTimeout(1200);
     await selectByLabel(page, "Version", datos.version);
+    await page.waitForTimeout(500);
     await selectByLabel(page, "Uso", datos.uso);
 
     function derivarServicio(uso) {
