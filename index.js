@@ -300,13 +300,17 @@ app.get("/catalogo/versiones", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------
-// GET /catalogo/servicios?tipoTransporte=Automóvil
+// GET /catalogo/servicios?tipoTransporte=Automóvil&uso=PARTICULAR
+// (El catálogo de Servicio depende de que "Uso" ya esté seleccionado)
 // -----------------------------------------------------------------------
 app.get("/catalogo/servicios", async (req, res) => {
   const tipoTransporte = req.query.tipoTransporte || "Automóvil";
-  const key = `servicios:${tipoTransporte}`;
+  const uso = normalizar(req.query.uso);
+  if (!uso) return res.status(400).json({ ok: false, error: "Falta el parámetro uso" });
+
+  const key = `servicios:${tipoTransporte}:${uso}`;
   const cached = cacheGet(key);
-  if (cached) return res.json({ ok: true, servicios: cached, cache: true });
+  if (cached && cached.length > 0) return res.json({ ok: true, servicios: cached, cache: true });
 
   let browser;
   await encolar(async () => {
@@ -314,9 +318,11 @@ app.get("/catalogo/servicios", async (req, res) => {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
     await irADatosDeLaUnidad(sesion.page, tipoTransporte);
+    await selectByLabel(sesion.page, "Uso", uso);
+    await esperarOpcionesCargadas(sesion.page, "Servicio");
     const servicios = await getOptionsByLabel(sesion.page, "Servicio");
     await browser.close();
-    cacheSet(key, servicios);
+    if (servicios.length > 0) cacheSet(key, servicios);
     res.json({ ok: true, servicios, cache: false });
   } catch (e) {
     if (browser) await browser.close();
@@ -384,6 +390,7 @@ app.post("/cotizar", async (req, res) => {
     await selectByLabel(page, "Version", datos.version);
     await page.waitForTimeout(500);
     await selectByLabel(page, "Uso", datos.uso);
+    await esperarOpcionesCargadas(page, "Servicio");
 
     // El "Servicio" ahora viene directo del dropdown del formulario (alimentado
     // en vivo desde el catálogo real), ya no lo derivamos internamente
