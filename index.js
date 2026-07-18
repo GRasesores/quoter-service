@@ -367,9 +367,52 @@ app.post("/cotizar", async (req, res) => {
     };
 
     await page.getByText("Guardar", { exact: true }).click();
+    await page.waitForTimeout(2000);
+
+    // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
+    let pdfUrl = null;
+    try {
+      await page.goto(MAPS_URL_QUOTES, { waitUntil: "networkidle" });
+      await page.waitForSelector("text=Cotizaciones", { timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+
+      // La cotización recién creada aparece hasta arriba de la lista
+      const botonImprimir = page.locator("button:has(.glyphicon-print)").first();
+      await botonImprimir.waitFor({ state: "visible", timeout: 15000 });
+
+      const fs = require("fs");
+      if (!fs.existsSync("public/pdfs")) fs.mkdirSync("public/pdfs", { recursive: true });
+      const nombreArchivo = `cotizacion_${Date.now()}.pdf`;
+      const rutaLocal = `public/pdfs/${nombreArchivo}`;
+
+      // El botón puede abrir una pestaña nueva o disparar una descarga; probamos ambas
+      const [eventoOPopupODescarga] = await Promise.all([
+        Promise.race([
+          page.waitForEvent("popup", { timeout: 15000 }).then((p) => ({ tipo: "popup", valor: p })),
+          page.waitForEvent("download", { timeout: 15000 }).then((d) => ({ tipo: "download", valor: d })),
+        ]),
+        botonImprimir.click(),
+      ]);
+
+      if (eventoOPopupODescarga.tipo === "download") {
+        await eventoOPopupODescarga.valor.saveAs(rutaLocal);
+        pdfUrl = `/pdfs/${nombreArchivo}`;
+      } else {
+        const popup = eventoOPopupODescarga.valor;
+        await popup.waitForLoadState("networkidle").catch(() => {});
+        const respuesta = await page.context().request.get(popup.url());
+        const buffer = await respuesta.body();
+        fs.writeFileSync(rutaLocal, buffer);
+        await popup.close();
+        pdfUrl = `/pdfs/${nombreArchivo}`;
+      }
+    } catch (e) {
+      console.error("No se pudo capturar el PDF (la cotización sí se guardó bien):", e.message);
+    }
+
     await browser.close();
 
-    return res.json({ ok: true, datosEnviados: datos, resultado });
+    return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl } });
   } catch (err) {
     let screenshotGuardado = false;
     if (page) {
