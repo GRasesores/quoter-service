@@ -428,6 +428,38 @@ app.post("/cotizar", async (req, res) => {
     };
     const tipoCoberturaReal = mapaTipoCobertura[datos.tipoPoliza] || datos.tipoPoliza;
     await selectByLabel(page, "Tipo de Cobertura", tipoCoberturaReal);
+    // Damos tiempo a que el sistema termine de recalcular/validar los detalles
+    // de la cobertura antes de seguir — si avanzamos muy rápido, el guardado
+    // final falla con "Cobertura inválida, revise la selección de coberturas"
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(2500);
+
+    // Con usos tipo plataforma (Conductor App, Uber, Didi, InDriver, etc.)
+    // aparece la fila "Responsabilidad Civil Pasajero" que necesita una Suma
+    // Asegurada asignada, si no el guardado falla con "cobertura inválida"
+    try {
+      const rcPasajeroLabel = page.getByText("Responsabilidad Civil Pasajero", { exact: false }).first();
+      const apareceRcPasajero = await rcPasajeroLabel.isVisible({ timeout: 3000 }).catch(() => false);
+      ultimoDiagnostico.apareceRcPasajero = apareceRcPasajero;
+      if (apareceRcPasajero) {
+        const fila = rcPasajeroLabel.locator("xpath=ancestor::tr[1]");
+        const campoMonto = fila.locator("input, select").first();
+        await campoMonto.waitFor({ state: "visible", timeout: 5000 });
+        const tagName = await campoMonto.evaluate((el) => el.tagName.toLowerCase());
+        if (tagName === "select") {
+          const opciones = await campoMonto.locator("option").allTextContents();
+          const opcion500k = opciones.find((o) => o.replace(/\D/g, "") === "500000");
+          if (opcion500k) await campoMonto.selectOption({ label: opcion500k });
+        } else {
+          await campoMonto.fill("500000");
+        }
+        await page.waitForTimeout(500);
+        ultimoDiagnostico.rcPasajeroAsignado = true;
+      }
+    } catch (e) {
+      ultimoDiagnostico.errorRcPasajero = e.message;
+      console.error("No se pudo asignar Responsabilidad Civil Pasajero:", e.message);
+    }
 
     // ---------- TAB: INFORMACION DE LA COTIZACION ----------
     const infoCotizacionTab = page.getByText("Información de la Cotización", { exact: true });
@@ -474,6 +506,10 @@ app.post("/cotizar", async (req, res) => {
       const matchTotalTrasGuardar = textoTrasGuardar.match(/Anual[:\s]*\$?([\d,]+\.\d{2})/);
       ultimoDiagnostico.totalTrasGuardar = matchTotalTrasGuardar ? matchTotalTrasGuardar[1] : null;
       ultimoDiagnostico.urlTrasGuardar = page.url();
+      // Detectamos automáticamente si apareció algún mensaje de error de
+      // validación (ej. "Cobertura inválida, revise la selección...")
+      const matchErrorValidacion = textoTrasGuardar.match(/(inv[aá]lid[oa][^\n.]{0,120})/i);
+      ultimoDiagnostico.errorValidacionTrasGuardar = matchErrorValidacion ? matchErrorValidacion[1] : null;
       const fs = require("fs");
       await page.screenshot({ path: "public/debug-guardar.png", fullPage: true });
       ultimoDiagnostico.capturaTrasGuardar = "/debug-guardar.png";
