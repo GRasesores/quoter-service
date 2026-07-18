@@ -341,6 +341,7 @@ app.post("/cotizar", async (req, res) => {
   await encolar(async () => {
   let browser;
   let page;
+  ultimoDiagnostico = { paso: "iniciando cotización", datosRecibidos: datos };
 
   try {
     datos.marca = normalizar(datos.marca);
@@ -470,7 +471,8 @@ app.post("/cotizar", async (req, res) => {
 
     // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
     let pdfUrl = null;
-    ultimoDiagnostico = { paso: "iniciando captura de PDF", folioActual };
+    ultimoDiagnostico.paso = "iniciando captura de PDF";
+    ultimoDiagnostico.folioActual = folioActual;
     try {
       // Primero navegamos a la ruta correcta, y luego forzamos una recarga real
       // (goto solo no basta en una SPA si ya habíamos visitado esa misma URL antes)
