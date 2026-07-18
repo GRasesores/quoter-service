@@ -26,6 +26,18 @@ function cacheSet(key, value) {
 
 const normalizar = (v) => (v || "").toString().trim().toUpperCase();
 
+// -----------------------------------------------------------------------
+// COLA: todas las tareas que abren una sesión en Maps Seguros pasan por aquí,
+// UNA A LA VEZ. Como todas usan la misma cuenta, dos sesiones simultáneas
+// pueden mezclar sus datos entre sí (una ve el estado de la otra) — esto lo evita.
+// -----------------------------------------------------------------------
+let colaProcesamiento = Promise.resolve();
+function encolar(tarea) {
+  const resultado = colaProcesamiento.then(tarea, tarea);
+  colaProcesamiento = resultado.catch(() => {});
+  return resultado;
+}
+
 // Guardamos aquí el detalle del último intento (éxito o error), para poder
 // verlo directo abriendo una URL en el navegador, sin depender de los logs
 // de Easypanel ni de las herramientas de desarrollador
@@ -151,6 +163,7 @@ app.get("/catalogo/marcas", async (req, res) => {
   if (cached) return res.json({ ok: true, marcas: cached, cache: true });
 
   let browser;
+  await encolar(async () => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
@@ -164,6 +177,7 @@ app.get("/catalogo/marcas", async (req, res) => {
     console.error("Error catálogo marcas:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -179,6 +193,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
   if (cached) return res.json({ ok: true, submarcas: cached, cache: true });
 
   let browser;
+  await encolar(async () => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
@@ -194,6 +209,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
     console.error("Error catálogo submarcas:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -212,6 +228,7 @@ app.get("/catalogo/anios", async (req, res) => {
   if (cached) return res.json({ ok: true, anios: cached, cache: true });
 
   let browser;
+  await encolar(async () => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
@@ -229,6 +246,7 @@ app.get("/catalogo/anios", async (req, res) => {
     console.error("Error catálogo años:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -247,6 +265,7 @@ app.get("/catalogo/versiones", async (req, res) => {
   if (cached) return res.json({ ok: true, versiones: cached, cache: true });
 
   let browser;
+  await encolar(async () => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
@@ -266,6 +285,7 @@ app.get("/catalogo/versiones", async (req, res) => {
     console.error("Error catálogo versiones:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -273,6 +293,8 @@ app.get("/catalogo/versiones", async (req, res) => {
 // -----------------------------------------------------------------------
 app.post("/cotizar", async (req, res) => {
   const datos = req.body;
+
+  await encolar(async () => {
   let browser;
   let page;
 
@@ -500,6 +522,7 @@ app.post("/cotizar", async (req, res) => {
       captura: screenshotGuardado ? "/debug.png" : null,
     });
   }
+  }); // fin de encolar()
 });
 
 // Ventanilla simple: abre esta URL en el navegador para ver en texto plano
@@ -510,6 +533,35 @@ app.get("/diagnostico", (req, res) => {
 
 app.get("/config", (req, res) => {
   res.json({ webhookUrl: process.env.N8N_WEBHOOK_URL || "" });
+});
+
+// Notifica por Telegram cuando el cliente descarga su PDF (señal de interés real)
+app.post("/notificar-descarga", async (req, res) => {
+  const { nombreCompleto, telefono, marca, modelo, anio } = req.body || {};
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (!token || !chatId) {
+    return res.status(500).json({ ok: false, error: "Faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID" });
+  }
+
+  const mensaje =
+    `🔥 Interés real — descargó su PDF\n` +
+    `Nombre: ${nombreCompleto || "-"}\n` +
+    `Tel: ${telefono || "-"}\n` +
+    `Vehiculo: ${marca || ""} ${modelo || ""} ${anio || ""}`;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: mensaje }),
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Error notificando descarga:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // El formulario le habla a ESTE endpoint (mismo dominio, sin problema de CORS),
