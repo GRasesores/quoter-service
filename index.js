@@ -64,15 +64,15 @@ async function abrirCotizadorLogueado() {
   return { browser, page };
 }
 
-// Navega a la pestaña "Datos de la Unidad" y asegura que "Tipo de Transporte"
-// quede en "Automóvil" (si no se fija explícito, el catálogo de Marca puede
-// cargar el de motocicletas/camiones en vez de autos)
-async function irADatosDeLaUnidad(page) {
+// Navega a la pestaña "Datos de la Unidad" y selecciona el Tipo de Transporte
+// indicado (Automóvil, Camión o Motocicleta) — de esto depende qué catálogo
+// de Marca se muestra
+async function irADatosDeLaUnidad(page, tipoTransporte = "Automóvil") {
   const tab = page.getByText("Datos de la Unidad", { exact: true });
   await tab.waitFor({ state: "visible", timeout: 30000 });
   await tab.click();
   await page.waitForTimeout(500);
-  await selectByLabel(page, "Tipo de Transporte", "Automóvil");
+  await selectByLabel(page, "Tipo de Transporte", tipoTransporte);
   await page.waitForTimeout(500);
 }
 
@@ -143,20 +143,21 @@ async function esperarOpcionesCargadas(page, labelText, timeoutMs = 10000) {
 }
 
 // -----------------------------------------------------------------------
-// GET /catalogo/marcas
+// GET /catalogo/marcas?tipoTransporte=Automóvil
 // -----------------------------------------------------------------------
 app.get("/catalogo/marcas", async (req, res) => {
-  const cached = cacheGet("marcas");
+  const tipoTransporte = req.query.tipoTransporte || "Automóvil";
+  const cached = cacheGet(`marcas:${tipoTransporte}`);
   if (cached) return res.json({ ok: true, marcas: cached, cache: true });
 
   let browser;
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
-    await irADatosDeLaUnidad(sesion.page);
+    await irADatosDeLaUnidad(sesion.page, tipoTransporte);
     const marcas = await getOptionsByLabel(sesion.page, "Marca");
     await browser.close();
-    cacheSet("marcas", marcas);
+    cacheSet(`marcas:${tipoTransporte}`, marcas);
     res.json({ ok: true, marcas, cache: false });
   } catch (e) {
     if (browser) await browser.close();
@@ -166,13 +167,14 @@ app.get("/catalogo/marcas", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------
-// GET /catalogo/submarcas?marca=GEELY
+// GET /catalogo/submarcas?marca=GEELY&tipoTransporte=Automóvil
 // -----------------------------------------------------------------------
 app.get("/catalogo/submarcas", async (req, res) => {
   const marca = normalizar(req.query.marca);
+  const tipoTransporte = req.query.tipoTransporte || "Automóvil";
   if (!marca) return res.status(400).json({ ok: false, error: "Falta el parámetro marca" });
 
-  const key = `submarcas:${marca}`;
+  const key = `submarcas:${tipoTransporte}:${marca}`;
   const cached = cacheGet(key);
   if (cached) return res.json({ ok: true, submarcas: cached, cache: true });
 
@@ -180,7 +182,7 @@ app.get("/catalogo/submarcas", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
-    await irADatosDeLaUnidad(sesion.page);
+    await irADatosDeLaUnidad(sesion.page, tipoTransporte);
     await selectByLabel(sesion.page, "Marca", marca);
     await esperarOpcionesCargadas(sesion.page, "Submarca");
     const submarcas = await getOptionsByLabel(sesion.page, "Submarca");
@@ -195,16 +197,17 @@ app.get("/catalogo/submarcas", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------
-// GET /catalogo/anios?marca=GEELY&submarca=EX2
+// GET /catalogo/anios?marca=GEELY&submarca=EX2&tipoTransporte=Automóvil
 // (En Maps Seguros, el selector que dice "Modelo" en realidad contiene el AÑO)
 // -----------------------------------------------------------------------
 app.get("/catalogo/anios", async (req, res) => {
   const marca = normalizar(req.query.marca);
   const submarca = normalizar(req.query.submarca);
+  const tipoTransporte = req.query.tipoTransporte || "Automóvil";
   if (!marca || !submarca)
     return res.status(400).json({ ok: false, error: "Faltan parámetros marca/submarca" });
 
-  const key = `anios:${marca}:${submarca}`;
+  const key = `anios:${tipoTransporte}:${marca}:${submarca}`;
   const cached = cacheGet(key);
   if (cached) return res.json({ ok: true, anios: cached, cache: true });
 
@@ -212,7 +215,7 @@ app.get("/catalogo/anios", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
-    await irADatosDeLaUnidad(sesion.page);
+    await irADatosDeLaUnidad(sesion.page, tipoTransporte);
     await selectByLabel(sesion.page, "Marca", marca);
     await esperarOpcionesCargadas(sesion.page, "Submarca");
     await selectByLabel(sesion.page, "Submarca", submarca);
@@ -229,16 +232,17 @@ app.get("/catalogo/anios", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------
-// GET /catalogo/versiones?marca=GEELY&submarca=EX2&anio=2026
+// GET /catalogo/versiones?marca=GEELY&submarca=EX2&anio=2026&tipoTransporte=Automóvil
 // -----------------------------------------------------------------------
 app.get("/catalogo/versiones", async (req, res) => {
   const marca = normalizar(req.query.marca);
   const submarca = normalizar(req.query.submarca);
   const anio = normalizar(req.query.anio);
+  const tipoTransporte = req.query.tipoTransporte || "Automóvil";
   if (!marca || !submarca || !anio)
     return res.status(400).json({ ok: false, error: "Faltan parámetros marca/submarca/anio" });
 
-  const key = `versiones:${marca}:${submarca}:${anio}`;
+  const key = `versiones:${tipoTransporte}:${marca}:${submarca}:${anio}`;
   const cached = cacheGet(key);
   if (cached) return res.json({ ok: true, versiones: cached, cache: true });
 
@@ -246,7 +250,7 @@ app.get("/catalogo/versiones", async (req, res) => {
   try {
     const sesion = await abrirCotizadorLogueado();
     browser = sesion.browser;
-    await irADatosDeLaUnidad(sesion.page);
+    await irADatosDeLaUnidad(sesion.page, tipoTransporte);
     await selectByLabel(sesion.page, "Marca", marca);
     await esperarOpcionesCargadas(sesion.page, "Submarca");
     await selectByLabel(sesion.page, "Submarca", submarca);
@@ -308,7 +312,7 @@ app.post("/cotizar", async (req, res) => {
     await datosUnidadTab.waitFor({ state: "visible", timeout: 40000 });
     await datosUnidadTab.click();
     await page.waitForTimeout(500);
-    await selectByLabel(page, "Tipo de Transporte", "Automóvil");
+    await selectByLabel(page, "Tipo de Transporte", datos.tipoTransporte || "Automóvil");
     await page.waitForTimeout(500);
 
     await selectByLabel(page, "Marca", datos.marca);
@@ -345,7 +349,16 @@ app.post("/cotizar", async (req, res) => {
     await coberturaTab.waitFor({ state: "visible", timeout: 30000 });
     await coberturaTab.click();
     await page.waitForTimeout(500);
-    await selectByLabel(page, "Tipo de Cobertura", datos.tipoPoliza);
+
+    // El formulario usa "RC" (corto y claro para el usuario), pero en Maps
+    // Seguros el nombre real de esa opción es "RESPONSABILIDAD CIVIL"
+    const mapaTipoCobertura = {
+      RC: "RESPONSABILIDAD CIVIL",
+      LIMITADA: "LIMITADA",
+      AMPLIA: "AMPLIA",
+    };
+    const tipoCoberturaReal = mapaTipoCobertura[datos.tipoPoliza] || datos.tipoPoliza;
+    await selectByLabel(page, "Tipo de Cobertura", tipoCoberturaReal);
 
     // ---------- TAB: INFORMACION DE LA COTIZACION ----------
     const infoCotizacionTab = page.getByText("Información de la Cotización", { exact: true });
