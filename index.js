@@ -73,6 +73,17 @@ async function abrirCotizadorLogueado() {
   await btnNuevo.click();
   await page.waitForTimeout(1500);
 
+  // Diagnóstico: confirmamos si el formulario realmente inició en blanco
+  // ("Nueva") o si por alguna razón retomó un borrador anterior (mostraría
+  // un número de folio en vez de la palabra "Nueva")
+  try {
+    const textoInicial = await page.locator("body").innerText();
+    const matchEstadoInicial = textoInicial.match(/Cotizaci[oó]n:\s*\n?\s*(\S+)/);
+    global.ultimoEstadoAlAbrirNuevo = matchEstadoInicial ? matchEstadoInicial[1] : "no encontrado";
+  } catch (e) {
+    global.ultimoEstadoAlAbrirNuevo = "error leyendo: " + e.message;
+  }
+
   return { browser, page };
 }
 
@@ -549,7 +560,7 @@ app.post("/cotizar", async (req, res) => {
 // Ventanilla simple: abre esta URL en el navegador para ver en texto plano
 // qué pasó en el último intento de cotización, sin depender de Easypanel
 app.get("/diagnostico", (req, res) => {
-  res.json(ultimoDiagnostico);
+  res.json({ ...ultimoDiagnostico, estadoAlAbrirNuevo: global.ultimoEstadoAlAbrirNuevo || null });
 });
 
 app.get("/config", (req, res) => {
