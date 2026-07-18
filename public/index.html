@@ -279,8 +279,24 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
       throw new Error(`${motivo} (revisa que el workflow de n8n esté Activo)`);
     }
 
+    const anual = datos.Anual || datos.anual || (datos.resultado && datos.resultado.anual) || null;
+    const numeroAsesor = "527141084886"; // 52 = México, agrega tu número real aquí
+    const mensajeWhatsapp = encodeURIComponent(
+      `Hola, quiero contratar la poliza de mi ${payload.marca} ${payload.modelo} ${payload.anio} y me gustaria recibir el link de pago.`
+    );
+    const linkWhatsapp = `https://wa.me/${numeroAsesor}?text=${mensajeWhatsapp}`;
+
     estado.className = "exito";
-    estado.textContent = "Cotizacion enviada correctamente. En breve recibiras el detalle.";
+    estado.innerHTML = `
+      <div><strong>Cotizacion lista</strong></div>
+      <div style="margin:10px 0">
+        ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
+        ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
+      </div>
+      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:10px">
+        Contactar por WhatsApp
+      </a>
+    `;
   } catch (err) {
     estado.className = "error";
     estado.textContent = "Error: " + err.message;
