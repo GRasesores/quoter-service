@@ -54,6 +54,13 @@ async function abrirCotizadorLogueado() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
+  // Por si aparece alguna ventana de confirmación nativa (confirm/alert) que
+  // pudiera estar bloqueando el guardado en silencio, la aceptamos automático
+  page.on("dialog", async (dialog) => {
+    console.log("Dialogo detectado:", dialog.type(), dialog.message());
+    await dialog.accept().catch(() => {});
+  });
+
   await page.goto(MAPS_URL_LOGIN, { waitUntil: "networkidle" });
   await page.fill("#email", process.env.MAPS_SEGUROS_USER);
   await page.fill("#password", process.env.MAPS_SEGUROS_PASS);
@@ -465,6 +472,9 @@ app.post("/cotizar", async (req, res) => {
       const matchTrasGuardar = textoTrasGuardar.match(/Cotizaci[oó]n:\s*\n?\s*(\S+)/);
       ultimoDiagnostico.folioTrasGuardar = matchTrasGuardar ? matchTrasGuardar[1] : "no encontrado";
       ultimoDiagnostico.urlTrasGuardar = page.url();
+      const fs = require("fs");
+      await page.screenshot({ path: "public/debug-guardar.png", fullPage: true });
+      ultimoDiagnostico.capturaTrasGuardar = "/debug-guardar.png";
     } catch (e) {
       ultimoDiagnostico.folioTrasGuardar = "error: " + e.message;
     }
