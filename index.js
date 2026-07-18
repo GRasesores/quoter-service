@@ -374,9 +374,12 @@ app.post("/cotizar", async (req, res) => {
     // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
     let pdfUrl = null;
     try {
+      // Primero navegamos a la ruta correcta, y luego forzamos una recarga real
+      // (goto solo no basta en una SPA si ya habíamos visitado esa misma URL antes)
       await page.goto(MAPS_URL_QUOTES, { waitUntil: "networkidle" });
+      await page.reload({ waitUntil: "networkidle" });
       await page.waitForSelector("text=Cotizaciones", { timeout: 20000 }).catch(() => {});
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1500);
 
       // La cotización recién creada aparece hasta arriba de la lista
       // Aprovechamos que ya estamos en la lista para confirmar el total definitivo
