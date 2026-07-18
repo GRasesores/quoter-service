@@ -432,6 +432,12 @@ app.post("/cotizar", async (req, res) => {
         console.error("No se pudo confirmar el total desde la lista:", e.message);
       }
 
+      ultimoDiagnostico.paso = "seleccionando la fila antes de buscar el boton";
+      // El botón de imprimir usa ng-show="showPrint": solo aparece en la fila
+      // que está "seleccionada" (activada con un clic), no en todas a la vez
+      await filaObjetivo.click();
+      await page.waitForTimeout(1000);
+
       ultimoDiagnostico.paso = "buscando boton de imprimir";
       const botonImprimir = filaObjetivo.locator("button:has(.glyphicon-print)").first();
       await botonImprimir.waitFor({ state: "visible", timeout: 15000 });
