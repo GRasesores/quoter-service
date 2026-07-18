@@ -115,6 +115,9 @@
     <label>Uso</label>
     <select id="uso" required></select>
 
+    <label>Servicio <span class="spinner" id="spinner-servicio" style="display:none"></span></label>
+    <select id="servicio" required><option value="">Cargando servicios...</option></select>
+
     <label>Tipo de Poliza</label>
     <select id="tipoPoliza" required>
       <option value="RC">RC</option>
@@ -181,6 +184,22 @@ function mostrarSpinner(id, mostrar) {
   if (el) el.style.display = mostrar ? "inline-block" : "none";
 }
 
+function cargarServicios() {
+  const tipoTransporte = $("tipoTransporte").value;
+  $("servicio").innerHTML = `<option value="">Cargando servicios...</option>`;
+  mostrarSpinner("servicio", true);
+  fetch(`/catalogo/servicios?tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || "No se pudieron cargar los servicios");
+      llenarSelect($("servicio"), data.servicios, "Selecciona un servicio");
+    })
+    .catch((e) => {
+      $("servicio").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("servicio", false));
+}
+
 function cargarMarcas() {
   const tipoTransporte = $("tipoTransporte").value;
   resetear($("submarca"), "Selecciona una marca primero");
@@ -200,9 +219,13 @@ function cargarMarcas() {
     .finally(() => mostrarSpinner("marca", false));
 }
 
-// Carga inicial de marcas (con el Tipo de Transporte por default: Automóvil)
+// Carga inicial de marcas y servicios (con el Tipo de Transporte por default: Automóvil)
 cargarMarcas();
-$("tipoTransporte").addEventListener("change", cargarMarcas);
+cargarServicios();
+$("tipoTransporte").addEventListener("change", () => {
+  cargarMarcas();
+  cargarServicios();
+});
 
 $("marca").addEventListener("change", () => {
   const tipoTransporte = $("tipoTransporte").value;
@@ -281,6 +304,7 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
     anio: $("anio").value,
     version: $("version").value,
     uso: $("uso").value,
+    servicio: $("servicio").value,
     tipoPoliza: $("tipoPoliza").value,
     nombreCompleto: $("nombreCompleto").value,
     codigoPostal: $("codigoPostal").value,
@@ -315,11 +339,28 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
         ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
       </div>
-      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:10px">Descargar PDF de la cotizacion</a>` : ""}
+      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:10px">Descargar PDF de la cotizacion</a>` : ""}
       <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600">
         Quiero contratar — Contactar por WhatsApp
       </a>
     `;
+
+    if (pdfUrl) {
+      const linkPdf = document.getElementById("link-pdf");
+      linkPdf.addEventListener("click", () => {
+        fetch("/notificar-descarga", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombreCompleto: payload.nombreCompleto,
+            telefono: payload.telefono,
+            marca: payload.marca,
+            modelo: payload.modelo,
+            anio: payload.anio,
+          }),
+        }).catch(() => {});
+      });
+    }
   } catch (err) {
     estado.className = "error";
     estado.textContent = "Error: " + err.message;
