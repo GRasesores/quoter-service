@@ -26,6 +26,11 @@ function cacheSet(key, value) {
 
 const normalizar = (v) => (v || "").toString().trim().toUpperCase();
 
+// Guardamos aquí el detalle del último intento (éxito o error), para poder
+// verlo directo abriendo una URL en el navegador, sin depender de los logs
+// de Easypanel ni de las herramientas de desarrollador
+let ultimoDiagnostico = { mensaje: "Todavía no se ha hecho ninguna cotización." };
+
 // -----------------------------------------------------------------------
 // Helpers compartidos de Playwright
 // -----------------------------------------------------------------------
@@ -380,6 +385,7 @@ app.post("/cotizar", async (req, res) => {
 
     // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
     let pdfUrl = null;
+    ultimoDiagnostico = { paso: "iniciando captura de PDF", folioActual };
     try {
       // Primero navegamos a la ruta correcta, y luego forzamos una recarga real
       // (goto solo no basta en una SPA si ya habíamos visitado esa misma URL antes)
@@ -387,6 +393,7 @@ app.post("/cotizar", async (req, res) => {
       await page.reload({ waitUntil: "networkidle" });
       await page.waitForSelector("text=Cotizaciones", { timeout: 20000 }).catch(() => {});
       await page.waitForTimeout(1500);
+      ultimoDiagnostico.paso = "lista recargada, buscando fila";
 
       // La cotización recién creada aparece hasta arriba de la lista
       // Aprovechamos que ya estamos en la lista para confirmar el total definitivo
@@ -395,16 +402,24 @@ app.post("/cotizar", async (req, res) => {
         ? page.locator("tr").filter({ hasText: folioActual }).first()
         : page.locator("tr").filter({ has: page.locator("button:has(.glyphicon-print)") }).first();
 
+      const cuentaFilasConFolio = folioActual
+        ? await page.locator("tr").filter({ hasText: folioActual }).count()
+        : null;
+      ultimoDiagnostico.cuentaFilasConFolio = cuentaFilasConFolio;
+
       try {
         const filaTexto = await filaObjetivo.innerText();
+        ultimoDiagnostico.filaTexto = filaTexto;
         const matchTotalGuardado = filaTexto.match(/\$([\d,]+\.\d{2})/);
         if (matchTotalGuardado) {
           resultado.anual = matchTotalGuardado[1];
         }
       } catch (e) {
+        ultimoDiagnostico.errorFila = e.message;
         console.error("No se pudo confirmar el total desde la lista:", e.message);
       }
 
+      ultimoDiagnostico.paso = "buscando boton de imprimir";
       const botonImprimir = filaObjetivo.locator("button:has(.glyphicon-print)").first();
       await botonImprimir.waitFor({ state: "visible", timeout: 15000 });
 
@@ -425,6 +440,7 @@ app.post("/cotizar", async (req, res) => {
       if (eventoOPopupODescarga.tipo === "download") {
         await eventoOPopupODescarga.valor.saveAs(rutaLocal);
         pdfUrl = `/pdfs/${nombreArchivo}`;
+        ultimoDiagnostico.paso = "PDF capturado via download";
       } else {
         const popup = eventoOPopupODescarga.valor;
         await popup.waitForLoadState("networkidle").catch(() => {});
@@ -433,11 +449,16 @@ app.post("/cotizar", async (req, res) => {
         fs.writeFileSync(rutaLocal, buffer);
         await popup.close();
         pdfUrl = `/pdfs/${nombreArchivo}`;
+        ultimoDiagnostico.paso = "PDF capturado via popup";
+        ultimoDiagnostico.popupUrl = popup.url();
       }
     } catch (e) {
+      ultimoDiagnostico.paso = "ERROR capturando PDF";
+      ultimoDiagnostico.errorPdf = e.message;
       console.error("No se pudo capturar el PDF (la cotización sí se guardó bien):", e.message);
     }
 
+    ultimoDiagnostico.resultadoFinal = { ok: true, pdfUrl, folioActual, anual: resultado.anual };
     await browser.close();
 
     return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl, folioActual } });
@@ -453,12 +474,19 @@ app.post("/cotizar", async (req, res) => {
     }
     if (browser) await browser.close();
     console.error("Error cotizando:", err);
+    ultimoDiagnostico = { paso: "ERROR general", error: err.message };
     return res.status(500).json({
       ok: false,
       error: err.message,
       captura: screenshotGuardado ? "/debug.png" : null,
     });
   }
+});
+
+// Ventanilla simple: abre esta URL en el navegador para ver en texto plano
+// qué pasó en el último intento de cotización, sin depender de Easypanel
+app.get("/diagnostico", (req, res) => {
+  res.json(ultimoDiagnostico);
 });
 
 app.get("/config", (req, res) => {
