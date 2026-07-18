@@ -289,6 +289,33 @@ app.get("/catalogo/versiones", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------
+// GET /catalogo/servicios?tipoTransporte=Automóvil
+// -----------------------------------------------------------------------
+app.get("/catalogo/servicios", async (req, res) => {
+  const tipoTransporte = req.query.tipoTransporte || "Automóvil";
+  const key = `servicios:${tipoTransporte}`;
+  const cached = cacheGet(key);
+  if (cached) return res.json({ ok: true, servicios: cached, cache: true });
+
+  let browser;
+  await encolar(async () => {
+  try {
+    const sesion = await abrirCotizadorLogueado();
+    browser = sesion.browser;
+    await irADatosDeLaUnidad(sesion.page, tipoTransporte);
+    const servicios = await getOptionsByLabel(sesion.page, "Servicio");
+    await browser.close();
+    cacheSet(key, servicios);
+    res.json({ ok: true, servicios, cache: false });
+  } catch (e) {
+    if (browser) await browser.close();
+    console.error("Error catálogo servicios:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+  });
+});
+
+// -----------------------------------------------------------------------
 // POST /cotizar
 // -----------------------------------------------------------------------
 app.post("/cotizar", async (req, res) => {
@@ -347,23 +374,17 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForTimeout(500);
     await selectByLabel(page, "Uso", datos.uso);
 
-    function derivarServicio(uso) {
-      const privadoPasajeros = [
-        "EXCLUSIVO UBER", "EXCLUSIVO DIDI", "INDRIVER", "BOLT",
-        "CONDUCTOR APP", "EXTENSION APP", "MIXTO",
-      ];
-      const carga = ["CARGA A y B PESADO", "CARGA C", "CARGA LIGERA"];
-      const reparto = ["REPARTO", "REPARTO APP"];
-      const taxi = ["TAXI", "MOTOTAXI"];
-
-      if (uso === "PARTICULAR") return "PARTICULAR";
-      if (privadoPasajeros.includes(uso)) return "PRIVADO PASAJEROS";
-      if (taxi.includes(uso)) return "TAXI";
-      if (carga.includes(uso)) return "CARGA A y B";
-      if (reparto.includes(uso)) return "REPARTO APP";
-      return "PARTICULAR";
-    }
-    await selectByLabel(page, "Servicio", derivarServicio(datos.uso));
+    // El "Servicio" ahora viene directo del dropdown del formulario (alimentado
+    // en vivo desde el catálogo real), ya no lo derivamos internamente
+    const serviciosDisponibles = await getOptionsByLabel(page, "Servicio");
+    const servicioFinal = serviciosDisponibles.some(
+      (s) => normalizar(s) === normalizar(datos.servicio)
+    )
+      ? datos.servicio
+      : serviciosDisponibles[0];
+    ultimoDiagnostico.serviciosDisponibles = serviciosDisponibles;
+    ultimoDiagnostico.servicioElegido = servicioFinal;
+    await selectByLabel(page, "Servicio", servicioFinal);
     await selectByLabel(page, "Flotilla", "Descuento Flotilla AA 11 A 20");
 
     // ---------- TAB: DETALLES DE COBERTURA ----------
