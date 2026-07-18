@@ -93,6 +93,13 @@
   <p class="sub" style="font-size:13px">La primera vez que se elige una marca/modelo puede tardar hasta 30 segundos en cargar (las siguientes veces es instantaneo).</p>
 
   <form id="form-cotizacion">
+    <label>Tipo de Transporte</label>
+    <select id="tipoTransporte" required>
+      <option value="Automóvil">Automóvil</option>
+      <option value="Camión">Camión</option>
+      <option value="Motocicleta">Motocicleta</option>
+    </select>
+
     <label>Marca <span class="spinner" id="spinner-marca" style="display:none"></span></label>
     <select id="marca" required><option value="">Cargando marcas...</option></select>
 
@@ -174,27 +181,38 @@ function mostrarSpinner(id, mostrar) {
   if (el) el.style.display = mostrar ? "inline-block" : "none";
 }
 
-// Carga inicial de marcas
-mostrarSpinner("marca", true);
-fetch("/catalogo/marcas")
-  .then((r) => r.json())
-  .then((data) => {
-    if (!data.ok) throw new Error(data.error || "No se pudieron cargar las marcas");
-    llenarSelect($("marca"), data.marcas, "Selecciona una marca");
-  })
-  .catch((e) => {
-    $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
-  })
-  .finally(() => mostrarSpinner("marca", false));
+function cargarMarcas() {
+  const tipoTransporte = $("tipoTransporte").value;
+  resetear($("submarca"), "Selecciona una marca primero");
+  resetear($("anio"), "Selecciona una submarca primero");
+  resetear($("version"), "Selecciona un año primero");
+  $("marca").innerHTML = `<option value="">Cargando marcas...</option>`;
+  mostrarSpinner("marca", true);
+  fetch(`/catalogo/marcas?tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || "No se pudieron cargar las marcas");
+      llenarSelect($("marca"), data.marcas, "Selecciona una marca");
+    })
+    .catch((e) => {
+      $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("marca", false));
+}
+
+// Carga inicial de marcas (con el Tipo de Transporte por default: Automóvil)
+cargarMarcas();
+$("tipoTransporte").addEventListener("change", cargarMarcas);
 
 $("marca").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
   const marca = $("marca").value;
   resetear($("submarca"), "Cargando...");
   resetear($("anio"), "Selecciona una submarca primero");
   resetear($("version"), "Selecciona un año primero");
   if (!marca) return;
   mostrarSpinner("submarca", true);
-  fetch(`/catalogo/submarcas?marca=${encodeURIComponent(marca)}`)
+  fetch(`/catalogo/submarcas?marca=${encodeURIComponent(marca)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
     .then((r) => r.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error);
@@ -208,13 +226,14 @@ $("marca").addEventListener("change", () => {
 });
 
 $("submarca").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
   const marca = $("marca").value;
   const submarca = $("submarca").value;
   resetear($("anio"), "Cargando...");
   resetear($("version"), "Selecciona un año primero");
   if (!submarca) return;
   mostrarSpinner("anio", true);
-  fetch(`/catalogo/anios?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}`)
+  fetch(`/catalogo/anios?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
     .then((r) => r.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error);
@@ -228,13 +247,14 @@ $("submarca").addEventListener("change", () => {
 });
 
 $("anio").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
   const marca = $("marca").value;
   const submarca = $("submarca").value;
   const anio = $("anio").value;
   resetear($("version"), "Cargando...");
   if (!anio) return;
   mostrarSpinner("version", true);
-  fetch(`/catalogo/versiones?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&anio=${encodeURIComponent(anio)}`)
+  fetch(`/catalogo/versiones?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&anio=${encodeURIComponent(anio)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
     .then((r) => r.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error);
@@ -255,6 +275,7 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
   estado.innerHTML = '<span class="spinner"></span>Cotizando en Maps Seguros y generando tu PDF, esto puede tardar hasta 2 minutos...';
 
   const payload = {
+    tipoTransporte: $("tipoTransporte").value,
     marca: $("marca").value,
     modelo: $("submarca").value,
     anio: $("anio").value,
