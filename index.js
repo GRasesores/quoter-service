@@ -350,7 +350,8 @@ app.post("/cotizar", async (req, res) => {
     await selectByLabel(page, "Conducto de Cobro", datos.conductoCobro || "Tarjeta de Crédito");
 
     // ---------- LEER EL TOTAL CALCULADO ----------
-    await page.waitForTimeout(1000);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(3000);
     const panelTexto = await page.locator("body").innerText();
 
     const extraerMonto = (etiqueta, texto) => {
@@ -377,6 +378,22 @@ app.post("/cotizar", async (req, res) => {
       await page.waitForTimeout(1000);
 
       // La cotización recién creada aparece hasta arriba de la lista
+      // Aprovechamos que ya estamos en la lista para confirmar el total definitivo
+      // que realmente quedó guardado (la fuente más confiable)
+      try {
+        const filaTexto = await page
+          .locator("tr")
+          .filter({ has: page.locator("button:has(.glyphicon-print)") })
+          .first()
+          .innerText();
+        const matchTotalGuardado = filaTexto.match(/\$([\d,]+\.\d{2})/);
+        if (matchTotalGuardado) {
+          resultado.anual = matchTotalGuardado[1];
+        }
+      } catch (e) {
+        console.error("No se pudo confirmar el total desde la lista:", e.message);
+      }
+
       const botonImprimir = page.locator("button:has(.glyphicon-print)").first();
       await botonImprimir.waitFor({ state: "visible", timeout: 15000 });
 
