@@ -280,6 +280,7 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
     }
 
     const anual = datos.Anual || datos.anual || (datos.resultado && datos.resultado.anual) || null;
+    const pdfUrl = datos.pdfUrl || (datos.resultado && datos.resultado.pdfUrl) || null;
     const numeroAsesor = "527141084886"; // 52 = México, agrega tu número real aquí
     const mensajeWhatsapp = encodeURIComponent(
       `Hola, quiero contratar la poliza de mi ${payload.marca} ${payload.modelo} ${payload.anio} y me gustaria recibir el link de pago.`
@@ -293,8 +294,9 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
         ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
       </div>
-      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:10px">
-        Contactar por WhatsApp
+      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:10px">Descargar PDF de la cotizacion</a>` : ""}
+      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600">
+        Quiero contratar — Contactar por WhatsApp
       </a>
     `;
   } catch (err) {
