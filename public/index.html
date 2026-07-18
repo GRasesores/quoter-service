@@ -116,7 +116,7 @@
     <select id="uso" required></select>
 
     <label>Servicio <span class="spinner" id="spinner-servicio" style="display:none"></span></label>
-    <select id="servicio" required><option value="">Cargando servicios...</option></select>
+    <select id="servicio" disabled required><option value="">Selecciona un uso primero</option></select>
 
     <label>Tipo de Poliza</label>
     <select id="tipoPoliza" required>
@@ -186,19 +186,24 @@ function mostrarSpinner(id, mostrar) {
 
 function cargarServicios() {
   const tipoTransporte = $("tipoTransporte").value;
+  const uso = $("uso").value;
+  resetear($("servicio"), "Selecciona un uso primero");
+  if (!uso) return;
   $("servicio").innerHTML = `<option value="">Cargando servicios...</option>`;
   mostrarSpinner("servicio", true);
-  fetch(`/catalogo/servicios?tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+  fetch(`/catalogo/servicios?tipoTransporte=${encodeURIComponent(tipoTransporte)}&uso=${encodeURIComponent(uso)}`)
     .then((r) => r.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error || "No se pudieron cargar los servicios");
       llenarSelect($("servicio"), data.servicios, "Selecciona un servicio");
+      $("servicio").disabled = false;
     })
     .catch((e) => {
       $("servicio").innerHTML = `<option value="">Error: ${e.message}</option>`;
     })
     .finally(() => mostrarSpinner("servicio", false));
 }
+$("uso").addEventListener("change", cargarServicios);
 
 function cargarMarcas() {
   const tipoTransporte = $("tipoTransporte").value;
@@ -219,13 +224,9 @@ function cargarMarcas() {
     .finally(() => mostrarSpinner("marca", false));
 }
 
-// Carga inicial de marcas y servicios (con el Tipo de Transporte por default: Automóvil)
+// Carga inicial de marcas (con el Tipo de Transporte por default: Automóvil)
 cargarMarcas();
-cargarServicios();
-$("tipoTransporte").addEventListener("change", () => {
-  cargarMarcas();
-  cargarServicios();
-});
+$("tipoTransporte").addEventListener("change", cargarMarcas);
 
 $("marca").addEventListener("change", () => {
   const tipoTransporte = $("tipoTransporte").value;
