@@ -368,7 +368,8 @@ app.post("/cotizar", async (req, res) => {
     };
 
     await page.getByText("Guardar", { exact: true }).click();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(4000);
 
     // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
     let pdfUrl = null;
