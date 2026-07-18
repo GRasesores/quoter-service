@@ -354,6 +354,13 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForTimeout(3000);
     const panelTexto = await page.locator("body").innerText();
 
+    // Capturamos el folio de ESTA cotización específica (aparece en el panel
+    // derecho, ej. "Cotización: 226095"), para más adelante ubicar exactamente
+    // esta fila en la lista y no una cotización anterior por error
+    let folioActual = null;
+    const matchFolio = panelTexto.match(/Cotizaci[oó]n:\s*\n?\s*(\d{4,})/);
+    if (matchFolio) folioActual = matchFolio[1];
+
     const extraerMonto = (etiqueta, texto) => {
       const match = texto.match(new RegExp(etiqueta + "[:\\s]*\\$?([\\d,]+\\.\\d{2})"));
       return match ? match[1] : null;
@@ -384,12 +391,12 @@ app.post("/cotizar", async (req, res) => {
       // La cotización recién creada aparece hasta arriba de la lista
       // Aprovechamos que ya estamos en la lista para confirmar el total definitivo
       // que realmente quedó guardado (la fuente más confiable)
+      const filaObjetivo = folioActual
+        ? page.locator("tr").filter({ hasText: folioActual }).first()
+        : page.locator("tr").filter({ has: page.locator("button:has(.glyphicon-print)") }).first();
+
       try {
-        const filaTexto = await page
-          .locator("tr")
-          .filter({ has: page.locator("button:has(.glyphicon-print)") })
-          .first()
-          .innerText();
+        const filaTexto = await filaObjetivo.innerText();
         const matchTotalGuardado = filaTexto.match(/\$([\d,]+\.\d{2})/);
         if (matchTotalGuardado) {
           resultado.anual = matchTotalGuardado[1];
@@ -398,7 +405,7 @@ app.post("/cotizar", async (req, res) => {
         console.error("No se pudo confirmar el total desde la lista:", e.message);
       }
 
-      const botonImprimir = page.locator("button:has(.glyphicon-print)").first();
+      const botonImprimir = filaObjetivo.locator("button:has(.glyphicon-print)").first();
       await botonImprimir.waitFor({ state: "visible", timeout: 15000 });
 
       const fs = require("fs");
@@ -433,7 +440,7 @@ app.post("/cotizar", async (req, res) => {
 
     await browser.close();
 
-    return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl } });
+    return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl, folioActual } });
   } catch (err) {
     let screenshotGuardado = false;
     if (page) {
