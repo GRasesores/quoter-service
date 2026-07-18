@@ -450,6 +450,17 @@ app.post("/cotizar", async (req, res) => {
     await page.waitForLoadState("networkidle").catch(() => {});
     await page.waitForTimeout(4000);
 
+    // Diagnóstico: confirmamos qué folio quedó asignado justo después de guardar,
+    // ANTES de navegar a ningún otro lado
+    try {
+      const textoTrasGuardar = await page.locator("body").innerText();
+      const matchTrasGuardar = textoTrasGuardar.match(/Cotizaci[oó]n:\s*\n?\s*(\S+)/);
+      ultimoDiagnostico.folioTrasGuardar = matchTrasGuardar ? matchTrasGuardar[1] : "no encontrado";
+      ultimoDiagnostico.urlTrasGuardar = page.url();
+    } catch (e) {
+      ultimoDiagnostico.folioTrasGuardar = "error: " + e.message;
+    }
+
     // ---------- CAPTURAR EL PDF (botón de imprimir de la cotización recién guardada) ----------
     let pdfUrl = null;
     ultimoDiagnostico = { paso: "iniciando captura de PDF", folioActual };
@@ -465,9 +476,30 @@ app.post("/cotizar", async (req, res) => {
       // La cotización recién creada aparece hasta arriba de la lista
       // Aprovechamos que ya estamos en la lista para confirmar el total definitivo
       // que realmente quedó guardado (la fuente más confiable)
-      const filaObjetivo = folioActual
-        ? page.locator("tr").filter({ hasText: folioActual }).first()
-        : page.locator("tr").filter({ has: page.locator("button:has(.glyphicon-print)") }).first();
+      let filaObjetivo;
+      if (folioActual) {
+        filaObjetivo = page.locator("tr").filter({ hasText: folioActual }).first();
+      } else {
+        // No teníamos el folio de antemano: leemos TODAS las filas, extraemos
+        // su número de folio, y tomamos la más reciente (el número más alto)
+        const todasLasFilas = page.locator("tr");
+        const totalFilas = await todasLasFilas.count();
+        let mejorFolio = -1;
+        let mejorIndice = 0;
+        for (let i = 0; i < Math.min(totalFilas, 15); i++) {
+          const texto = await todasLasFilas.nth(i).innerText().catch(() => "");
+          const m = texto.match(/^\s*(\d{4,})/);
+          if (m) {
+            const num = parseInt(m[1], 10);
+            if (num > mejorFolio) {
+              mejorFolio = num;
+              mejorIndice = i;
+            }
+          }
+        }
+        ultimoDiagnostico.folioMasAltoEncontrado = mejorFolio;
+        filaObjetivo = todasLasFilas.nth(mejorIndice);
+      }
 
       const cuentaFilasConFolio = folioActual
         ? await page.locator("tr").filter({ hasText: folioActual }).count()
