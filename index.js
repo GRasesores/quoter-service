@@ -471,6 +471,8 @@ app.post("/cotizar", async (req, res) => {
       const textoTrasGuardar = await page.locator("body").innerText();
       const matchTrasGuardar = textoTrasGuardar.match(/Cotizaci[oó]n:\s*\n?\s*(\S+)/);
       ultimoDiagnostico.folioTrasGuardar = matchTrasGuardar ? matchTrasGuardar[1] : "no encontrado";
+      const matchTotalTrasGuardar = textoTrasGuardar.match(/Anual[:\s]*\$?([\d,]+\.\d{2})/);
+      ultimoDiagnostico.totalTrasGuardar = matchTotalTrasGuardar ? matchTotalTrasGuardar[1] : null;
       ultimoDiagnostico.urlTrasGuardar = page.url();
       const fs = require("fs");
       await page.screenshot({ path: "public/debug-guardar.png", fullPage: true });
@@ -528,13 +530,13 @@ app.post("/cotizar", async (req, res) => {
       try {
         const filaTexto = await filaObjetivo.innerText();
         ultimoDiagnostico.filaTexto = filaTexto;
-        const matchTotalGuardado = filaTexto.match(/\$([\d,]+\.\d{2})/);
-        if (matchTotalGuardado) {
-          resultado.anual = matchTotalGuardado[1];
-        }
+        // NOTA: ya NO sobrescribimos resultado.anual aquí — el "Guardar" no
+        // siempre persiste un registro nuevo todavía, así que esta fila puede
+        // ser una cotización vieja. El monto correcto ya se capturó antes,
+        // directo de la pantalla de cotización (más confiable por ahora).
       } catch (e) {
         ultimoDiagnostico.errorFila = e.message;
-        console.error("No se pudo confirmar el total desde la lista:", e.message);
+        console.error("No se pudo leer la fila de la lista:", e.message);
       }
 
       ultimoDiagnostico.paso = "seleccionando la fila antes de buscar el boton";
