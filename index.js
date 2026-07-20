@@ -16,6 +16,13 @@ const upload = multer({
     },
   }),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB por archivo
+  fileFilter: (req, file, cb) => {
+    const permitido = file.mimetype.startsWith("image/") || file.mimetype === "application/pdf";
+    if (!permitido) {
+      return cb(new Error(`Archivo "${file.originalname}" no es una imagen ni un PDF`));
+    }
+    cb(null, true);
+  },
 });
 
 const app = express();
@@ -701,11 +708,18 @@ app.get("/config", (req, res) => {
 // Fiscal, y te los manda por Telegram junto con los datos del cliente
 app.post(
   "/subir-documentos",
-  upload.fields([
-    { name: "ine", maxCount: 1 },
-    { name: "tarjetaCirculacion", maxCount: 1 },
-    { name: "constanciaFiscal", maxCount: 1 },
-  ]),
+  (req, res, next) => {
+    upload.fields([
+      { name: "ine", maxCount: 1 },
+      { name: "tarjetaCirculacion", maxCount: 1 },
+      { name: "constanciaFiscal", maxCount: 1 },
+    ])(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ ok: false, error: err.message });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
