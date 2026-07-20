@@ -461,6 +461,30 @@ app.post("/cotizar", async (req, res) => {
       console.error("No se pudo asignar Responsabilidad Civil Pasajero:", e.message);
     }
 
+    // "Tocamos" cada dropdown de la tabla de coberturas (re-seleccionando su
+    // propio valor actual) — algunas apps Angular no registran internamente
+    // los valores por default hasta que hay una interacción real, aunque se
+    // vean bien en pantalla, y eso puede causar "cobertura inválida" al guardar
+    try {
+      const todosLosSelects = page.locator("select");
+      const totalSelects = await todosLosSelects.count();
+      let tocados = 0;
+      for (let i = 0; i < totalSelects; i++) {
+        const sel = todosLosSelects.nth(i);
+        const esVisible = await sel.isVisible().catch(() => false);
+        if (!esVisible) continue;
+        const valorActual = await sel.evaluate((el) => el.value).catch(() => null);
+        if (valorActual) {
+          await sel.selectOption(valorActual).catch(() => {});
+          tocados++;
+        }
+      }
+      ultimoDiagnostico.selectsTocados = tocados;
+      await page.waitForTimeout(1000);
+    } catch (e) {
+      ultimoDiagnostico.errorTocandoSelects = e.message;
+    }
+
     // ---------- TAB: INFORMACION DE LA COTIZACION ----------
     const infoCotizacionTab = page.getByText("Información de la Cotización", { exact: true });
     await infoCotizacionTab.waitFor({ state: "visible", timeout: 30000 });
