@@ -333,6 +333,8 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
     );
     const linkWhatsapp = `https://wa.me/${numeroAsesor}?text=${mensajeWhatsapp}`;
 
+    const idCotizacion = pdfUrl ? (pdfUrl.match(/\d+/) || [])[0] : String(Date.now());
+
     estado.className = "exito";
     estado.innerHTML = `
       <div><strong>Cotizacion lista</strong></div>
@@ -341,9 +343,16 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
       </div>
       ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:10px">Descargar PDF de la cotizacion</a>` : ""}
-      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600">
+      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:16px">
         Quiero contratar — Contactar por WhatsApp
       </a>
+      <div id="panel-decision">
+        <p style="text-align:center;margin-bottom:10px">¿Deseas continuar con la contratacion?</p>
+        <div style="display:flex;gap:10px">
+          <button type="button" id="btn-si" style="flex:1;padding:12px;background:var(--gold);color:var(--navy);border:none;border-radius:6px;font-weight:600;cursor:pointer">Si, continuar</button>
+          <button type="button" id="btn-no" style="flex:1;padding:12px;background:transparent;color:var(--text);border:1px solid var(--muted);border-radius:6px;font-weight:600;cursor:pointer">No por ahora</button>
+        </div>
+      </div>
     `;
 
     if (pdfUrl) {
@@ -362,6 +371,49 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         }).catch(() => {});
       });
     }
+
+    async function enviarDecision(decision, canal) {
+      try {
+        const res = await fetch("/enviar-interes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idCotizacion, decision, canal,
+            nombreCompleto: payload.nombreCompleto,
+            telefono: payload.telefono,
+            marca: payload.marca,
+            modelo: payload.modelo,
+            anio: payload.anio,
+            pdfUrl,
+          }),
+        });
+        const datos = await res.json();
+        const panel = document.getElementById("panel-decision");
+        if (datos.ok && datos.siguientePaso) {
+          panel.innerHTML = `<p style="text-align:center">${datos.mensaje}</p>
+            <a href="${datos.siguientePaso}" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600">Subir mis documentos</a>`;
+        } else {
+          panel.innerHTML = `<p style="text-align:center">${(datos && datos.mensaje) || "Listo."}</p>`;
+        }
+      } catch (e) {
+        document.getElementById("panel-decision").innerHTML = `<p style="text-align:center;color:var(--error)">Error: ${e.message}</p>`;
+      }
+    }
+
+    document.getElementById("btn-si").addEventListener("click", () => {
+      const panel = document.getElementById("panel-decision");
+      panel.innerHTML = `
+        <p style="text-align:center;margin-bottom:10px">¿Como prefieres continuar?</p>
+        <div style="display:flex;gap:10px">
+          <button type="button" id="btn-mensajes" style="flex:1;padding:12px;background:var(--gold);color:var(--navy);border:none;border-radius:6px;font-weight:600;cursor:pointer">Todo por mensajes</button>
+          <button type="button" id="btn-asesor" style="flex:1;padding:12px;background:transparent;color:var(--text);border:1px solid var(--muted);border-radius:6px;font-weight:600;cursor:pointer">Contactar asesor</button>
+        </div>
+      `;
+      document.getElementById("btn-mensajes").addEventListener("click", () => enviarDecision("si", "mensajes"));
+      document.getElementById("btn-asesor").addEventListener("click", () => enviarDecision("si", "asesor"));
+    });
+
+    document.getElementById("btn-no").addEventListener("click", () => enviarDecision("no", ""));
   } catch (err) {
     estado.className = "error";
     estado.textContent = "Error: " + err.message;
