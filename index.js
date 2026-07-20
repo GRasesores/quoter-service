@@ -1,5 +1,22 @@
 const express = require("express");
 const { chromium } = require("playwright");
+const multer = require("multer");
+const fs = require("fs");
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = "public/documentos";
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const id = req.body.idCotizacion || Date.now();
+      cb(null, `${id}-${file.fieldname}${require("path").extname(file.originalname) || ".jpg"}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB por archivo
+});
 
 const app = express();
 app.use(express.json());
@@ -679,6 +696,66 @@ app.get("/diagnostico", (req, res) => {
 app.get("/config", (req, res) => {
   res.json({ webhookUrl: process.env.N8N_WEBHOOK_URL || "" });
 });
+
+// Recibe INE, Tarjeta de Circulación y (opcional) Constancia de Situación
+// Fiscal, y te los manda por Telegram junto con los datos del cliente
+app.post(
+  "/subir-documentos",
+  upload.fields([
+    { name: "ine", maxCount: 1 },
+    { name: "tarjetaCirculacion", maxCount: 1 },
+    { name: "constanciaFiscal", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const { idCotizacion, nombreCompleto, telefono, canal } = req.body;
+
+    if (!token || !chatId) {
+      return res.status(500).json({ ok: false, error: "Faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID" });
+    }
+    if (!req.files || (!req.files.ine && !req.files.tarjetaCirculacion)) {
+      return res.status(400).json({ ok: false, error: "Faltan los archivos INE y/o Tarjeta de Circulación" });
+    }
+
+    try {
+      const FormData = (await import("form-data")).default;
+
+      const mensajeTexto =
+        `📎 Documentos recibidos\n` +
+        `ID cotización: ${idCotizacion || "-"}\n` +
+        `Nombre: ${nombreCompleto || "-"}\n` +
+        `Tel: ${telefono || "-"}\n` +
+        `Canal: ${canal || "-"}\n` +
+        `Constancia fiscal: ${req.files.constanciaFiscal ? "Sí, adjunta" : "No adjuntó (se usará RFC genérico)"}`;
+
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: mensajeTexto }),
+      });
+
+      // Mandamos cada archivo como documento aparte
+      for (const campo of ["ine", "tarjetaCirculacion", "constanciaFiscal"]) {
+        const archivo = req.files[campo] && req.files[campo][0];
+        if (!archivo) continue;
+        const form = new FormData();
+        form.append("chat_id", chatId);
+        form.append("caption", campo);
+        form.append("document", fs.createReadStream(archivo.path), archivo.originalname);
+        await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+          method: "POST",
+          body: form,
+        });
+      }
+
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("Error subiendo documentos:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
 
 // Notifica por Telegram cuando el cliente descarga su PDF (señal de interés real)
 app.post("/notificar-descarga", async (req, res) => {
