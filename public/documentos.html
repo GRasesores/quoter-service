@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sube tus documentos - G&R NEXUS</title>
+<style>
+  :root {
+    --navy: #0a1128;
+    --navy2: #10182f;
+    --gold: #c8a96e;
+    --text: #eae6da;
+    --muted: #9a97a0;
+    --error: #e05252;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 600; color: var(--gold); margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 24px; font-size: 14px; }
+  label {
+    display: block;
+    font-size: 14px;
+    color: var(--text);
+    margin: 18px 0 6px;
+    font-weight: 600;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    background: var(--navy2);
+    border: 1px solid #2a3252;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 14px;
+    background: var(--gold);
+    color: var(--navy);
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #estado {
+    margin-top: 20px;
+    padding: 14px;
+    border-radius: 6px;
+    display: none;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  #estado.error { display: block; background: rgba(224,82,82,0.15); color: var(--error); border: 1px solid var(--error); }
+  #estado.exito { display: block; background: rgba(200,169,110,0.12); color: var(--gold); border: 1px solid var(--gold); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--muted); border-top-color: var(--gold);
+    border-radius: 50%; animation: girar 0.8s linear infinite;
+    margin-right: 8px; vertical-align: middle;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sube tus documentos</h1>
+  <p class="sub">Necesitamos estos documentos para continuar con tu póliza</p>
+
+  <form id="form-documentos">
+    <label>INE (identificación oficial)</label>
+    <div class="hint">Puedes tomar una foto o subir un archivo</div>
+    <input type="file" id="ine" accept="image/*,application/pdf" capture="environment" required>
+
+    <label>Tarjeta de Circulación</label>
+    <div class="hint">Puedes tomar una foto o subir un archivo</div>
+    <input type="file" id="tarjetaCirculacion" accept="image/*,application/pdf" capture="environment" required>
+
+    <label>Constancia de Situación Fiscal (opcional)</label>
+    <div class="hint">Solo si necesitas factura — si no la subes, se usará el RFC genérico</div>
+    <input type="file" id="constanciaFiscal" accept="image/*,application/pdf" capture="environment">
+
+    <button type="submit" id="btn-submit">Enviar documentos</button>
+  </form>
+
+  <div id="estado"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const estado = $("estado");
+const params = new URLSearchParams(window.location.search);
+const idCotizacion = params.get("id") || "";
+const canal = params.get("canal") || "";
+
+$("form-documentos").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("btn-submit");
+  btn.disabled = true;
+  estado.className = "exito";
+  estado.style.display = "block";
+  estado.innerHTML = '<span class="spinner"></span>Enviando tus documentos...';
+
+  const formData = new FormData();
+  formData.append("idCotizacion", idCotizacion);
+  formData.append("canal", canal);
+  if ($("ine").files[0]) formData.append("ine", $("ine").files[0]);
+  if ($("tarjetaCirculacion").files[0]) formData.append("tarjetaCirculacion", $("tarjetaCirculacion").files[0]);
+  if ($("constanciaFiscal").files[0]) formData.append("constanciaFiscal", $("constanciaFiscal").files[0]);
+
+  try {
+    const res = await fetch("/subir-documentos", { method: "POST", body: formData });
+    const datos = await res.json();
+    if (!datos.ok) throw new Error(datos.error || `Error ${res.status}`);
+
+    estado.className = "exito";
+    estado.innerHTML = "<strong>¡Listo!</strong> Recibimos tus documentos, en breve continuamos con tu póliza.";
+    $("form-documentos").style.display = "none";
+  } catch (err) {
+    estado.className = "error";
+    estado.textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
