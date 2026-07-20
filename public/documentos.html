@@ -103,6 +103,11 @@ const estado = $("estado");
 const params = new URLSearchParams(window.location.search);
 const idCotizacion = params.get("id") || "";
 const canal = params.get("canal") || "";
+const nombreCompleto = params.get("nombre") || "";
+const telefono = params.get("telefono") || "";
+const marca = params.get("marca") || "";
+const modelo = params.get("modelo") || "";
+const anio = params.get("anio") || "";
 
 $("form-documentos").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -115,6 +120,11 @@ $("form-documentos").addEventListener("submit", async (e) => {
   const formData = new FormData();
   formData.append("idCotizacion", idCotizacion);
   formData.append("canal", canal);
+  formData.append("nombreCompleto", nombreCompleto);
+  formData.append("telefono", telefono);
+  formData.append("marca", marca);
+  formData.append("modelo", modelo);
+  formData.append("anio", anio);
   if ($("ine").files[0]) formData.append("ine", $("ine").files[0]);
   if ($("tarjetaCirculacion").files[0]) formData.append("tarjetaCirculacion", $("tarjetaCirculacion").files[0]);
   if ($("constanciaFiscal").files[0]) formData.append("constanciaFiscal", $("constanciaFiscal").files[0]);
