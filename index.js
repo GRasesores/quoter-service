@@ -723,7 +723,7 @@ app.post(
   async (req, res) => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    const { idCotizacion, nombreCompleto, telefono, canal } = req.body;
+    const { idCotizacion, nombreCompleto, telefono, canal, marca, modelo, anio } = req.body;
 
     if (!token || !chatId) {
       return res.status(500).json({ ok: false, error: "Faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID" });
@@ -733,13 +733,12 @@ app.post(
     }
 
     try {
-      const FormData = (await import("form-data")).default;
-
       const mensajeTexto =
         `📎 Documentos recibidos\n` +
         `ID cotización: ${idCotizacion || "-"}\n` +
         `Nombre: ${nombreCompleto || "-"}\n` +
         `Tel: ${telefono || "-"}\n` +
+        `Auto: ${marca || "-"} ${modelo || "-"} ${anio || "-"}\n` +
         `Canal: ${canal || "-"}\n` +
         `Constancia fiscal: ${req.files.constanciaFiscal ? "Sí, adjunta" : "No adjuntó (se usará RFC genérico)"}`;
 
@@ -749,21 +748,47 @@ app.post(
         body: JSON.stringify({ chat_id: chatId, text: mensajeTexto }),
       });
 
-      // Mandamos cada archivo como documento aparte
+      // Mandamos cada archivo como documento aparte (FormData/Blob nativos,
+      // compatibles con fetch — la librería "form-data" no lo era)
       for (const campo of ["ine", "tarjetaCirculacion", "constanciaFiscal"]) {
         const archivo = req.files[campo] && req.files[campo][0];
         if (!archivo) continue;
+        const buffer = fs.readFileSync(archivo.path);
+        const blob = new Blob([buffer]);
         const form = new FormData();
         form.append("chat_id", chatId);
         form.append("caption", campo);
-        form.append("document", fs.createReadStream(archivo.path), archivo.originalname);
-        await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        form.append("document", blob, archivo.originalname);
+        const respTg = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
           method: "POST",
           body: form,
         });
+        const resultadoTg = await respTg.json();
+        if (!resultadoTg.ok) {
+          console.error(`Error mandando ${campo} a Telegram:`, resultadoTg);
+        }
       }
 
       res.json({ ok: true });
+
+      // Reenviamos a n8n (en segundo plano, sin bloquear la respuesta al
+      // cliente) para que cree la carpeta en Drive y suba los documentos ahí
+      const webhookDocumentos = process.env.N8N_WEBHOOK_URL_DOCUMENTOS;
+      if (webhookDocumentos) {
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        const archivosUrls = {};
+        for (const campo of ["ine", "tarjetaCirculacion", "constanciaFiscal"]) {
+          const archivo = req.files[campo] && req.files[campo][0];
+          if (archivo) archivosUrls[campo] = `${baseUrl}/documentos/${archivo.filename}`;
+        }
+        fetch(webhookDocumentos, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idCotizacion, nombreCompleto, telefono, marca, modelo, anio, archivos: archivosUrls,
+          }),
+        }).catch((e) => console.error("Error avisando a n8n para Drive:", e.message));
+      }
     } catch (e) {
       console.error("Error subiendo documentos:", e);
       res.status(500).json({ ok: false, error: e.message });
