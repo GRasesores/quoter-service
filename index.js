@@ -786,8 +786,32 @@ app.post("/notificar-descarga", async (req, res) => {
   }
 });
 
-// El formulario le habla a ESTE endpoint (mismo dominio, sin problema de CORS),
-// y aquí, servidor a servidor, se reenvía a n8n
+// Reenvía la decisión del cliente (¿continuar? ¿qué canal?) al Webhook de
+// interés en n8n — mismo patrón que /enviar-cotizacion, evita problemas de CORS
+app.post("/enviar-interes", async (req, res) => {
+  const webhookUrl = process.env.N8N_WEBHOOK_URL_INTERES;
+  if (!webhookUrl) {
+    return res.status(500).json({ ok: false, error: "N8N_WEBHOOK_URL_INTERES no está configurada" });
+  }
+  try {
+    const respuestaN8n = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const texto = await respuestaN8n.text();
+    let datos;
+    try {
+      datos = JSON.parse(texto);
+    } catch {
+      datos = { textoCompleto: texto };
+    }
+    return res.status(respuestaN8n.status).json({ ok: respuestaN8n.ok, ...datos });
+  } catch (err) {
+    console.error("Error reenviando interés:", err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
 app.post("/enviar-cotizacion", async (req, res) => {
   const webhookUrl = process.env.N8N_WEBHOOK_URL;
   if (!webhookUrl) {
