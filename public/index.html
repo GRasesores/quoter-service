@@ -336,6 +336,9 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
 
     const anual = datos.Anual || datos.anual || (datos.resultado && datos.resultado.anual) || null;
     const pdfUrl = datos.pdfUrl || (datos.resultado && datos.resultado.pdfUrl) || null;
+    const importeBase = datos.resultado && datos.resultado.importeBase;
+    const extras = datos.resultado && datos.resultado.extras;
+    const descuento = datos.resultado && datos.resultado.descuento;
     const numeroAsesor = "527141084886"; // 52 = México, agrega tu número real aquí
     const mensajeWhatsapp = encodeURIComponent(
       `Hola, quiero contratar la poliza de mi ${payload.marca} ${payload.modelo} ${payload.anio} y me gustaria recibir el link de pago.`
@@ -344,17 +347,24 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
 
     const idCotizacion = pdfUrl ? (pdfUrl.match(/\d+/) || [])[0] : String(Date.now());
 
+    const filaDesglose = (etiqueta, valor) =>
+      valor ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">${etiqueta}</span><span>$${valor}</span></div>` : "";
+
     estado.className = "exito";
     estado.innerHTML = `
       <div><strong>Cotizacion lista</strong></div>
       <div style="margin:10px 0">
-        ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
-        ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
+        ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}
       </div>
-      ${pdfUrl ? `
-        <p style="text-align:center;font-size:13px;color:var(--muted);margin:14px 0 6px">Revisa tu cotizacion completa (coberturas, protecciones):</p>
-        <iframe src="${pdfUrl}" style="width:100%;height:400px;border:1px solid #2a3252;border-radius:6px;margin-bottom:6px"></iframe>
-        <a href="${pdfUrl}" download="cotizacion.pdf" id="link-pdf" style="display:block;text-align:center;font-size:13px;color:var(--gold);text-decoration:none;margin-bottom:16px">Descargar PDF</a>
+      ${(importeBase || extras || descuento || anual) ? `
+        <div style="background:var(--navy2);border-radius:6px;padding:12px 14px;margin-bottom:16px">
+          ${filaDesglose("Importe Base", importeBase)}
+          ${filaDesglose("Extras", extras)}
+          ${descuento ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">Descuento</span><span>-$${descuento}</span></div>` : ""}
+          <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:4px;border-top:1px solid #2a3252;font-size:16px;font-weight:600"><span>Total Anual</span><span style="color:var(--gold)">$${anual || "-"}</span></div>
+        </div>
+        <p style="text-align:center;font-size:12px;color:var(--muted);margin:0 0 8px">El detalle de coberturas y protecciones viene en el PDF, tu asesor ya tiene una copia</p>
+        ${pdfUrl ? `<a href="${pdfUrl}" download="cotizacion.pdf" id="link-pdf" style="display:block;text-align:center;font-size:13px;color:var(--gold);text-decoration:none;margin-bottom:16px">Descargar PDF</a>` : ""}
       ` : ""}
       <div id="panel-decision">
         <p style="text-align:center;margin-bottom:10px">¿Deseas continuar con la contratacion?</p>
