@@ -169,6 +169,7 @@ function encolar(tarea) {
 // verlo directo abriendo una URL en el navegador, sin depender de los logs
 // de Easypanel ni de las herramientas de desarrollador
 let ultimoDiagnostico = { mensaje: "Todavía no se ha hecho ninguna cotización." };
+let ultimoDiagnosticoDocumentos = { mensaje: "Todavía no se han subido documentos." };
 
 // -----------------------------------------------------------------------
 // Helpers compartidos de Playwright
@@ -951,6 +952,11 @@ app.get("/diagnostico", (req, res) => {
   res.json({ ...ultimoDiagnostico, estadoAlAbrirNuevo: global.ultimoEstadoAlAbrirNuevo || null });
 });
 
+// Igual que /diagnostico pero para el paso de subir documentos
+app.get("/diagnostico-documentos", (req, res) => {
+  res.json(ultimoDiagnosticoDocumentos);
+});
+
 app.get("/config", (req, res) => {
   res.json({ webhookUrl: process.env.N8N_WEBHOOK_URL || "" });
 });
@@ -976,10 +982,18 @@ app.post(
     const chatId = process.env.TELEGRAM_CHAT_ID;
     const { idCotizacion, nombreCompleto, telefono, canal, marca, modelo, anio } = req.body;
 
+    ultimoDiagnosticoDocumentos = {
+      paso: "iniciando",
+      camposRecibidos: { idCotizacion, nombreCompleto, telefono, canal, marca, modelo, anio },
+      archivosRecibidos: req.files ? Object.keys(req.files) : [],
+    };
+
     if (!token || !chatId) {
+      ultimoDiagnosticoDocumentos.paso = "ERROR: faltan credenciales de Telegram";
       return res.status(500).json({ ok: false, error: "Faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID" });
     }
     if (!req.files || (!req.files.ine && !req.files.tarjetaCirculacion)) {
+      ultimoDiagnosticoDocumentos.paso = "ERROR: faltan archivos";
       return res.status(400).json({ ok: false, error: "Faltan los archivos INE y/o Tarjeta de Circulación" });
     }
 
@@ -1021,27 +1035,48 @@ app.post(
       }
 
       res.json({ ok: true });
+      ultimoDiagnosticoDocumentos.paso = "Telegram enviado, avisando a n8n para Drive";
 
-      // Reenviamos a n8n (en segundo plano, sin bloquear la respuesta al
-      // cliente) para que cree la carpeta en Drive y suba los documentos ahí
+      // Reenviamos a n8n para que cree la carpeta en Drive y suba los
+      // documentos ahí. Ya no es "fire and forget" — esperamos la respuesta
+      // para poder registrar en el diagnóstico si algo falla.
       const webhookDocumentos = process.env.N8N_WEBHOOK_URL_DOCUMENTOS;
+      ultimoDiagnosticoDocumentos.webhookDocumentosConfigurado = !!webhookDocumentos;
+      ultimoDiagnosticoDocumentos.webhookDocumentosUrl = webhookDocumentos || null;
+
       if (webhookDocumentos) {
         const baseUrl = `${req.protocol}://${req.get("host")}`;
+        ultimoDiagnosticoDocumentos.baseUrlUsada = baseUrl;
         const archivosUrls = {};
         for (const campo of ["ine", "tarjetaCirculacion", "constanciaFiscal"]) {
           const archivo = req.files[campo] && req.files[campo][0];
           if (archivo) archivosUrls[campo] = `${baseUrl}/documentos/${archivo.filename}`;
         }
-        fetch(webhookDocumentos, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            idCotizacion, nombreCompleto, telefono, marca, modelo, anio, archivos: archivosUrls,
-          }),
-        }).catch((e) => console.error("Error avisando a n8n para Drive:", e.message));
+        ultimoDiagnosticoDocumentos.archivosUrlsEnviadas = archivosUrls;
+
+        try {
+          const respuestaN8n = await fetch(webhookDocumentos, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              idCotizacion, nombreCompleto, telefono, marca, modelo, anio, archivos: archivosUrls,
+            }),
+          });
+          ultimoDiagnosticoDocumentos.paso = "n8n respondió";
+          ultimoDiagnosticoDocumentos.n8nStatusCode = respuestaN8n.status;
+          ultimoDiagnosticoDocumentos.n8nRespuestaTexto = await respuestaN8n.text().catch(() => null);
+        } catch (e) {
+          ultimoDiagnosticoDocumentos.paso = "ERROR llamando a n8n";
+          ultimoDiagnosticoDocumentos.errorN8n = e.message;
+          console.error("Error avisando a n8n para Drive:", e.message);
+        }
+      } else {
+        ultimoDiagnosticoDocumentos.paso = "N8N_WEBHOOK_URL_DOCUMENTOS no está configurada";
       }
     } catch (e) {
       console.error("Error subiendo documentos:", e);
+      ultimoDiagnosticoDocumentos.paso = "ERROR general";
+      ultimoDiagnosticoDocumentos.errorGeneral = e.message;
       res.status(500).json({ ok: false, error: e.message });
     }
   }
