@@ -299,9 +299,11 @@ async function esperarOpcionesCargadas(page, labelText, timeoutMs = 10000) {
 
 // Asigna Suma Asegurada y/o Deducible a una fila específica de la tabla de
 // coberturas (ej. "Daños Materiales", "Responsabilidad Civil Pasajero").
-// Detecta si el campo es un <input> (texto/número) o un <select> (dropdown
-// de porcentajes), y actúa según corresponda. Nunca truena el flujo completo
-// si algo no se encuentra — solo lo reporta en el diagnóstico.
+// La Suma Asegurada puede ser un <input> de texto libre O un <select> con
+// montos preestablecidos (varía según el tipo de póliza/cobertura); si es
+// un menú y el monto exacto no existe, toma el más cercano hacia ARRIBA
+// (nunca menos protección de la que se pidió). Nunca truena el flujo
+// completo si algo no se encuentra — solo lo reporta en el diagnóstico.
 async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
   const { suma, deducible } = opciones;
   const resultado = { fila: nombreFila };
@@ -312,27 +314,56 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
     if (!visible) return resultado;
 
     const fila = filaLabel.locator("xpath=ancestor::tr[1]");
+    const camposFila = fila.locator("input, select");
+    const total = await camposFila.count();
+
+    let indiceUsadoParaSuma = -1;
 
     if (suma !== undefined) {
-      const camposFila = fila.locator("input, select");
-      const total = await camposFila.count();
+      const sumaObjetivo = Number(String(suma).replace(/\D/g, ""));
       for (let i = 0; i < total; i++) {
         const campo = camposFila.nth(i);
         if (!(await campo.isVisible().catch(() => false))) continue;
         const tag = await campo.evaluate((el) => el.tagName.toLowerCase());
+
         if (tag === "input") {
           await campo.fill(String(suma));
           resultado.sumaAsignada = true;
+          indiceUsadoParaSuma = i;
+          break;
+        }
+
+        if (tag === "select") {
+          const opcionesSelect = await campo.locator("option").allTextContents();
+          // ¿Estas opciones parecen montos en dinero? (al menos una con $ o solo dígitos)
+          const montos = opcionesSelect
+            .map((o) => ({ texto: o, numero: Number(o.replace(/[^\d]/g, "")) }))
+            .filter((o) => o.texto.trim() !== "" && !isNaN(o.numero) && o.numero > 0);
+          if (montos.length === 0) continue; // no es el select de montos, seguimos buscando
+
+          const exacto = montos.find((m) => m.numero === sumaObjetivo);
+          const masCercanoArriba = montos
+            .filter((m) => m.numero >= sumaObjetivo)
+            .sort((a, b) => a.numero - b.numero)[0];
+          const elegido = exacto || masCercanoArriba || montos[montos.length - 1];
+
+          await campo.selectOption({ label: elegido.texto });
+          resultado.sumaAsignada = true;
+          resultado.sumaSolicitada = sumaObjetivo;
+          resultado.sumaRealAsignada = elegido.numero;
+          indiceUsadoParaSuma = i;
           break;
         }
       }
+      if (indiceUsadoParaSuma === -1) resultado.sumaNoEncontrada = true;
     }
 
     if (deducible !== undefined) {
-      const camposFila = fila.locator("select");
-      const total = await camposFila.count();
       for (let i = 0; i < total; i++) {
+        if (i === indiceUsadoParaSuma) continue; // no reusar el campo ya usado para suma
         const campo = camposFila.nth(i);
+        const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
+        if (tag !== "select") continue;
         if (!(await campo.isVisible().catch(() => false))) continue;
         const opcionesSelect = await campo.locator("option").allTextContents();
         const match = opcionesSelect.find(
@@ -649,11 +680,21 @@ app.post("/cotizar", async (req, res) => {
     // revisa si el Uso cae en un grupo especial (plataforma/reparto), si no,
     // usa la tabla genérica por Tipo de Transporte + Tipo de Póliza
     const configAplicable = obtenerConfigCobertura(datos.tipoTransporte, datos.tipoPoliza, datos.uso);
+    let coberturasReales = null;
     if (configAplicable) {
       const resultadosCobertura = [];
+      coberturasReales = {};
       for (const [nombreFila, valores] of Object.entries(configAplicable)) {
         const r = await establecerCoberturaFila(page, nombreFila, valores);
         resultadosCobertura.push(r);
+        // Solo la incluimos en lo que se le muestra al cliente si realmente
+        // se encontró la fila (si no existe para esta cobertura, se omite)
+        if (r.encontrada) {
+          coberturasReales[nombreFila] = {
+            suma: r.sumaRealAsignada || valores.suma,
+            deducible: r.deducibleAsignado ? valores.deducible : valores.deducible,
+          };
+        }
       }
       ultimoDiagnostico.coberturasAplicadas = resultadosCobertura;
       await page.waitForTimeout(1000);
@@ -872,7 +913,7 @@ app.post("/cotizar", async (req, res) => {
     return res.json({
       ok: true,
       datosEnviados: datos,
-      resultado: { ...resultado, pdfUrl, folioActual, coberturas: configAplicable || null },
+      resultado: { ...resultado, pdfUrl, folioActual, coberturas: coberturasReales || configAplicable || null },
     });
   } catch (err) {
     let screenshotGuardado = false;
