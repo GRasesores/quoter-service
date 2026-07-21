@@ -79,6 +79,8 @@ const CONFIG_COBERTURAS = {
     },
   },
 };
+CONFIG_COBERTURAS.Motocicleta.LIMITADA = { ...CONFIG_COBERTURAS.Motocicleta.AMPLIA };
+CONFIG_COBERTURAS.Motocicleta.RC = { ...CONFIG_COBERTURAS.Motocicleta.AMPLIA };
 // LIMITADA y RC de Automóvil usan la misma base que AMPLIA — el código
 // se salta en silencio cualquier fila que no exista en esa cobertura,
 // así que no hay riesgo de forzar algo que no aplique
@@ -867,7 +869,11 @@ app.post("/cotizar", async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl, folioActual } });
+    return res.json({
+      ok: true,
+      datosEnviados: datos,
+      resultado: { ...resultado, pdfUrl, folioActual, coberturas: configAplicable || null },
+    });
   } catch (err) {
     let screenshotGuardado = false;
     if (page) {
