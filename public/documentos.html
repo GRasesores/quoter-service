@@ -134,8 +134,19 @@ $("form-documentos").addEventListener("submit", async (e) => {
     const datos = await res.json();
     if (!datos.ok) throw new Error(datos.error || `Error ${res.status}`);
 
+    const numeroAsesor = "527141084886";
+    const mensajeWhatsapp = encodeURIComponent(
+      `Hola, ya envie mis documentos para mi cotizacion #${idCotizacion} (${marca} ${modelo} ${anio}). Quedo en espera de los siguientes pasos para emitir mi poliza.`
+    );
+    const linkWhatsapp = `https://wa.me/${numeroAsesor}?text=${mensajeWhatsapp}`;
+
     estado.className = "exito";
-    estado.innerHTML = "<strong>¡Listo!</strong> Recibimos tus documentos, en breve continuamos con tu póliza.";
+    estado.innerHTML = `
+      <strong>¡Listo!</strong> Recibimos tus documentos, en breve continuamos con tu póliza.
+      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:14px">
+        Contacta a tu asesor
+      </a>
+    `;
     $("form-documentos").style.display = "none";
   } catch (err) {
     estado.className = "error";
