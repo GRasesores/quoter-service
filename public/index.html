@@ -282,8 +282,17 @@ $("anio").addEventListener("change", () => {
     .then((r) => r.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error);
+      if (!data.versiones || data.versiones.length === 0) {
+        // Esta submarca no tiene versiones cargadas en Maps Seguros —
+        // dejamos avanzar sin bloquear el formulario
+        $("version").innerHTML = `<option value="">Sin versiones disponibles (puedes continuar)</option>`;
+        $("version").disabled = false;
+        $("version").required = false;
+        return;
+      }
       llenarSelect($("version"), data.versiones, "Selecciona una version");
       $("version").disabled = false;
+      $("version").required = true;
     })
     .catch((e) => {
       $("version").innerHTML = `<option value="">Error: ${e.message}</option>`;
@@ -342,10 +351,7 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
         ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
       </div>
-      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:10px">Descargar PDF de la cotizacion</a>` : ""}
-      <a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:16px">
-        Quiero contratar — Contactar por WhatsApp
-      </a>
+      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:16px">Descargar PDF de la cotizacion</a>` : ""}
       <div id="panel-decision">
         <p style="text-align:center;margin-bottom:10px">¿Deseas continuar con la contratacion?</p>
         <div style="display:flex;gap:10px">
@@ -389,11 +395,12 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         });
         const datos = await res.json();
         const panel = document.getElementById("panel-decision");
+        const htmlWhatsapp = `<a href="${linkWhatsapp}" target="_blank" style="display:block;text-align:center;background:#25D366;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:10px">Contactar por WhatsApp</a>`;
         if (datos.ok && datos.siguientePaso) {
           panel.innerHTML = `<p style="text-align:center">${datos.mensaje}</p>
             <a href="${datos.siguientePaso}" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600">Subir mis documentos</a>`;
         } else {
-          panel.innerHTML = `<p style="text-align:center">${(datos && datos.mensaje) || "Listo."}</p>`;
+          panel.innerHTML = `<p style="text-align:center">${(datos && datos.mensaje) || "Listo."}</p>${htmlWhatsapp}`;
         }
       } catch (e) {
         document.getElementById("panel-decision").innerHTML = `<p style="text-align:center;color:var(--error)">Error: ${e.message}</p>`;
