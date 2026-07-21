@@ -339,16 +339,42 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
     const importeBase = datos.resultado && datos.resultado.importeBase;
     const extras = datos.resultado && datos.resultado.extras;
     const descuento = datos.resultado && datos.resultado.descuento;
+    const coberturas = datos.resultado && datos.resultado.coberturas;
     const numeroAsesor = "527141084886"; // 52 = México, agrega tu número real aquí
-    const mensajeWhatsapp = encodeURIComponent(
-      `Hola, quiero contratar la poliza de mi ${payload.marca} ${payload.modelo} ${payload.anio} y me gustaria recibir el link de pago.`
-    );
-    const linkWhatsapp = `https://wa.me/${numeroAsesor}?text=${mensajeWhatsapp}`;
 
     const idCotizacion = pdfUrl ? (pdfUrl.match(/\d+/) || [])[0] : String(Date.now());
 
+    const mensajeWhatsapp = encodeURIComponent(
+      `Hola, ya vi mi cotizacion #${idCotizacion} de mi ${payload.marca} ${payload.modelo} ${payload.anio}, me interesa contratar. Me compartes el PDF?`
+    );
+    const linkWhatsapp = `https://wa.me/${numeroAsesor}?text=${mensajeWhatsapp}`;
+
     const filaDesglose = (etiqueta, valor) =>
       valor ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">${etiqueta}</span><span>$${valor}</span></div>` : "";
+
+    const formatoValor = (v) => {
+      if (v === undefined || v === null) return "-";
+      const soloDigitos = String(v).replace(/\D/g, "");
+      if (soloDigitos && soloDigitos === String(v).trim()) {
+        return "$" + Number(soloDigitos).toLocaleString("es-MX");
+      }
+      return v;
+    };
+
+    const tablaCoberturas = coberturas
+      ? `<div style="margin:14px 0">
+          <p style="text-align:center;font-size:13px;color:var(--muted);margin:0 0 8px">Coberturas de tu poliza</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr style="color:var(--muted);text-align:left"><th style="padding:4px 0;font-weight:600">Cobertura</th><th style="padding:4px 0;font-weight:600">Suma</th><th style="padding:4px 0;font-weight:600;text-align:right">Deducible</th></tr>
+            ${Object.entries(coberturas)
+              .map(
+                ([nombre, v]) =>
+                  `<tr style="border-top:1px solid #2a3252"><td style="padding:6px 0">${nombre}</td><td style="padding:6px 0">${v.suma ? formatoValor(v.suma) : "Amparada"}</td><td style="padding:6px 0;text-align:right">${v.deducible || "-"}</td></tr>`
+              )
+              .join("")}
+          </table>
+        </div>`
+      : "";
 
     estado.className = "exito";
     estado.innerHTML = `
@@ -357,16 +383,15 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}
       </div>
       ${(importeBase || extras || descuento || anual) ? `
-        <div style="background:var(--navy2);border-radius:6px;padding:12px 14px;margin-bottom:16px">
+        <div style="background:var(--navy2);border-radius:6px;padding:12px 14px">
           ${filaDesglose("Importe Base", importeBase)}
           ${filaDesglose("Extras", extras)}
           ${descuento ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">Descuento</span><span>-$${descuento}</span></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:4px;border-top:1px solid #2a3252;font-size:16px;font-weight:600"><span>Total Anual</span><span style="color:var(--gold)">$${anual || "-"}</span></div>
         </div>
-        <p style="text-align:center;font-size:12px;color:var(--muted);margin:0 0 8px">El detalle de coberturas y protecciones viene en el PDF, tu asesor ya tiene una copia</p>
-        ${pdfUrl ? `<a href="${pdfUrl}" download="cotizacion.pdf" id="link-pdf" style="display:block;text-align:center;font-size:13px;color:var(--gold);text-decoration:none;margin-bottom:16px">Descargar PDF</a>` : ""}
       ` : ""}
-      <div id="panel-decision">
+      ${tablaCoberturas}
+      <div id="panel-decision" style="margin-top:16px">
         <p style="text-align:center;margin-bottom:10px">¿Deseas continuar con la contratacion?</p>
         <div style="display:flex;gap:10px">
           <button type="button" id="btn-si" style="flex:1;padding:12px;background:var(--gold);color:var(--navy);border:none;border-radius:6px;font-weight:600;cursor:pointer">Si, continuar</button>
@@ -374,40 +399,6 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         </div>
       </div>
     `;
-
-    if (pdfUrl) {
-      const linkPdf = document.getElementById("link-pdf");
-      linkPdf.addEventListener("click", async (e) => {
-        e.preventDefault();
-        fetch("/notificar-descarga", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nombreCompleto: payload.nombreCompleto,
-            telefono: payload.telefono,
-            marca: payload.marca,
-            modelo: payload.modelo,
-            anio: payload.anio,
-          }),
-        }).catch(() => {});
-
-        try {
-          const respuestaPdf = await fetch(pdfUrl);
-          const blob = await respuestaPdf.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const enlaceTemporal = document.createElement("a");
-          enlaceTemporal.href = blobUrl;
-          enlaceTemporal.download = "cotizacion.pdf";
-          document.body.appendChild(enlaceTemporal);
-          enlaceTemporal.click();
-          document.body.removeChild(enlaceTemporal);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-        } catch (err) {
-          // Si algo falla, dejamos que abra el PDF normal como respaldo
-          window.open(pdfUrl, "_blank");
-        }
-      });
-    }
 
     async function enviarDecision(decision, canal) {
       try {
