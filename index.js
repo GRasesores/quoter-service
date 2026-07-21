@@ -339,7 +339,13 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
           const opcionesSelect = await campo.locator("option").allTextContents();
           // ¿Estas opciones parecen montos en dinero? (al menos una con $ o solo dígitos)
           const montos = opcionesSelect
-            .map((o) => ({ texto: o, numero: Number(o.replace(/[^\d]/g, "")) }))
+            .map((o) => {
+              // Extraemos solo la parte entera del monto (antes del punto decimal),
+              // sin quitar el punto y pegar los centavos como si fueran dígitos
+              const m = o.match(/([\d,]+)(?:\.\d+)?/);
+              const numero = m ? Number(m[1].replace(/,/g, "")) : NaN;
+              return { texto: o, numero };
+            })
             .filter((o) => o.texto.trim() !== "" && !isNaN(o.numero) && o.numero > 0);
           if (montos.length === 0) continue; // no es el select de montos, seguimos buscando
 
