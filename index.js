@@ -60,8 +60,10 @@ const CONFIG_COBERTURAS = {
     AMPLIA: {
       "Daños Materiales": { deducible: "10%" },
       "Robo Total": { deducible: "20%" },
-      "Responsabilidad Civil Daños a Terceros": { suma: "1500000", deducible: "50 uma" },
+      "Responsabilidad Civil Daños a Terceros": { suma: "1000000", deducible: "50 uma" },
       "Responsabilidad Civil Pasajero": { suma: "500000", deducible: "No Aplica" },
+      "Gastos Medicos Moto": { suma: "100000" },
+      "Muerte Conductor Moto": { suma: "50000" },
       "Asistencia Legal": { deducible: "No Aplica" },
       "Asistencia Vial Moto": { deducible: "No Aplica" },
     },
@@ -131,9 +133,9 @@ const COBERTURA_PLATAFORMA_AUTO = {
 const COBERTURA_REPARTO_MOTO = {
   "Daños Materiales": { deducible: "10%" },
   "Robo Total": { deducible: "20%" },
-  "Responsabilidad Civil Daños a Terceros": { suma: "3000000", deducible: "0 uma" },
-  "Gastos Médicos": { suma: "100000" },
-  "Muerte Conductor X Accidente": { suma: "50000" },
+  "Responsabilidad Civil Daños a Terceros": { suma: "1000000", deducible: "0 uma" },
+  "Gastos Medicos Moto": { suma: "100000" },
+  "Muerte Conductor Moto": { suma: "50000" },
   "Asistencia Legal": { deducible: "No Aplica" },
   "Asistencia Vial Moto": { deducible: "No Aplica" },
 };
