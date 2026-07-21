@@ -364,7 +364,8 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
 
     if (pdfUrl) {
       const linkPdf = document.getElementById("link-pdf");
-      linkPdf.addEventListener("click", () => {
+      linkPdf.addEventListener("click", async (e) => {
+        e.preventDefault();
         fetch("/notificar-descarga", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -376,6 +377,22 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
             anio: payload.anio,
           }),
         }).catch(() => {});
+
+        try {
+          const respuestaPdf = await fetch(pdfUrl);
+          const blob = await respuestaPdf.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const enlaceTemporal = document.createElement("a");
+          enlaceTemporal.href = blobUrl;
+          enlaceTemporal.download = "cotizacion.pdf";
+          document.body.appendChild(enlaceTemporal);
+          enlaceTemporal.click();
+          document.body.removeChild(enlaceTemporal);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+        } catch (err) {
+          // Si algo falla, dejamos que abra el PDF normal como respaldo
+          window.open(pdfUrl, "_blank");
+        }
       });
     }
 
