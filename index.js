@@ -51,6 +51,105 @@ function cacheSet(key, value) {
 const normalizar = (v) => (v || "").toString().trim().toUpperCase();
 
 // -----------------------------------------------------------------------
+// CONFIGURACIÓN DE COBERTURAS: valores exactos de Suma Asegurada/Deducible
+// por Tipo de Transporte + Tipo de Póliza. Se va ampliando conforme el
+// negocio define los valores correctos para cada combinación.
+// -----------------------------------------------------------------------
+const CONFIG_COBERTURAS = {
+  Motocicleta: {
+    AMPLIA: {
+      "Daños Materiales": { deducible: "10%" },
+      "Robo Total": { deducible: "20%" },
+      "Responsabilidad Civil Daños a Terceros": { suma: "1500000", deducible: "50 uma" },
+      "Responsabilidad Civil Pasajero": { suma: "500000", deducible: "No Aplica" },
+      "Asistencia Legal": { deducible: "No Aplica" },
+      "Asistencia Vial Moto": { deducible: "No Aplica" },
+    },
+  },
+  Automóvil: {
+    AMPLIA: {
+      "Daños Materiales": { deducible: "5%" },
+      "Robo Total": { deducible: "10%" },
+      "Responsabilidad Civil Daños a Terceros": { suma: "3000000", deducible: "0 uma" },
+      "Gastos Médicos": { suma: "150000" },
+      "Muerte Conductor X Accidente": { suma: "50000" },
+      "Cristales y Espejos": { deducible: "20%" },
+      "Asistencia Legal": { deducible: "No Aplica" },
+      "Asistencia Vial Autos": { deducible: "No Aplica" },
+    },
+  },
+};
+// LIMITADA y RC de Automóvil usan la misma base que AMPLIA — el código
+// se salta en silencio cualquier fila que no exista en esa cobertura,
+// así que no hay riesgo de forzar algo que no aplique
+CONFIG_COBERTURAS.Automóvil.LIMITADA = { ...CONFIG_COBERTURAS.Automóvil.AMPLIA };
+CONFIG_COBERTURAS.Automóvil.RC = { ...CONFIG_COBERTURAS.Automóvil.AMPLIA };
+
+CONFIG_COBERTURAS.Camión = {
+  AMPLIA: {
+    "Daños Materiales": { deducible: "5%" },
+    "Robo Total": { deducible: "10%" },
+    "Responsabilidad Civil Daños a Terceros": { suma: "3000000", deducible: "25 uma" },
+    "Responsabilidad Civil Pasajero": { suma: "1000000", deducible: "No Aplica" },
+    "Gastos Médicos": { suma: "100000" },
+    "Muerte Conductor X Accidente": { suma: "50000" },
+    "Cristales y Espejos": { deducible: "20%" },
+    "Asistencia Legal": { deducible: "No Aplica" },
+    "Asistencia Vial Camiones": { deducible: "No Aplica" },
+  },
+};
+CONFIG_COBERTURAS.Camión.LIMITADA = { ...CONFIG_COBERTURAS.Camión.AMPLIA };
+CONFIG_COBERTURAS.Camión.RC = { ...CONFIG_COBERTURAS.Camión.AMPLIA };
+
+// -----------------------------------------------------------------------
+// COBERTURAS ESPECIALES POR USO (plataforma/taxi/reparto): estos usos
+// tienen tarifario propio de flotilla — cuando el Uso cae en uno de estos
+// grupos, esta configuración tiene prioridad sobre CONFIG_COBERTURAS de
+// arriba (que es genérica por Tipo de Transporte + Tipo de Póliza).
+// El deducible de RC Daños a Terceros usa el nivel medio: 25 UMA.
+// -----------------------------------------------------------------------
+const USOS_PLATAFORMA_AUTO = [
+  "EXCLUSIVO UBER", "EXCLUSIVO DIDI", "INDRIVER", "BOLT",
+  "CONDUCTOR APP", "EXTENSION APP", "MIXTO", "TAXI",
+];
+const USOS_REPARTO_MOTO = ["REPARTO", "REPARTO APP"];
+
+const COBERTURA_PLATAFORMA_AUTO = {
+  "Daños Materiales": { deducible: "10%" },
+  "Robo Total": { deducible: "20%" },
+  "Responsabilidad Civil Daños a Terceros": { suma: "3000000", deducible: "25 uma" },
+  "Responsabilidad Civil Pasajero": { suma: "1000000", deducible: "No Aplica" },
+  "Gastos Médicos": { suma: "250000" },
+  "Muerte Conductor X Accidente": { suma: "50000" },
+  "Cristales y Espejos": { deducible: "20%" },
+  "Asistencia Legal": { deducible: "No Aplica" },
+  "Asistencia Vial Autos": { deducible: "No Aplica" },
+};
+
+const COBERTURA_REPARTO_MOTO = {
+  "Daños Materiales": { deducible: "10%" },
+  "Robo Total": { deducible: "20%" },
+  "Responsabilidad Civil Daños a Terceros": { suma: "3000000", deducible: "0 uma" },
+  "Gastos Médicos": { suma: "100000" },
+  "Muerte Conductor X Accidente": { suma: "50000" },
+  "Asistencia Legal": { deducible: "No Aplica" },
+  "Asistencia Vial Moto": { deducible: "No Aplica" },
+};
+
+// Devuelve la configuración de coberturas correcta: primero revisa si el
+// Uso cae en un grupo especial (plataforma/reparto), si no, usa la tabla
+// genérica por Tipo de Transporte + Tipo de Póliza
+function obtenerConfigCobertura(tipoTransporte, tipoPoliza, uso) {
+  if (tipoTransporte === "Automóvil" && USOS_PLATAFORMA_AUTO.includes(uso)) {
+    return COBERTURA_PLATAFORMA_AUTO;
+  }
+  if (tipoTransporte === "Motocicleta" && USOS_REPARTO_MOTO.includes(uso)) {
+    return COBERTURA_REPARTO_MOTO;
+  }
+  return (CONFIG_COBERTURAS[tipoTransporte] && CONFIG_COBERTURAS[tipoTransporte][tipoPoliza]) || null;
+}
+
+// -----------------------------------------------------------------------
 // COLA: todas las tareas que abren una sesión en Maps Seguros pasan por aquí,
 // UNA A LA VEZ. Como todas usan la misma cuenta, dos sesiones simultáneas
 // pueden mezclar sus datos entre sí (una ve el estado de la otra) — esto lo evita.
@@ -194,6 +293,63 @@ async function esperarOpcionesCargadas(page, labelText, timeoutMs = 10000) {
     if (count > 1) return;
     await page.waitForTimeout(300);
   }
+}
+
+// Asigna Suma Asegurada y/o Deducible a una fila específica de la tabla de
+// coberturas (ej. "Daños Materiales", "Responsabilidad Civil Pasajero").
+// Detecta si el campo es un <input> (texto/número) o un <select> (dropdown
+// de porcentajes), y actúa según corresponda. Nunca truena el flujo completo
+// si algo no se encuentra — solo lo reporta en el diagnóstico.
+async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
+  const { suma, deducible } = opciones;
+  const resultado = { fila: nombreFila };
+  try {
+    const filaLabel = page.getByText(nombreFila, { exact: false }).first();
+    const visible = await filaLabel.isVisible({ timeout: 3000 }).catch(() => false);
+    resultado.encontrada = visible;
+    if (!visible) return resultado;
+
+    const fila = filaLabel.locator("xpath=ancestor::tr[1]");
+
+    if (suma !== undefined) {
+      const camposFila = fila.locator("input, select");
+      const total = await camposFila.count();
+      for (let i = 0; i < total; i++) {
+        const campo = camposFila.nth(i);
+        if (!(await campo.isVisible().catch(() => false))) continue;
+        const tag = await campo.evaluate((el) => el.tagName.toLowerCase());
+        if (tag === "input") {
+          await campo.fill(String(suma));
+          resultado.sumaAsignada = true;
+          break;
+        }
+      }
+    }
+
+    if (deducible !== undefined) {
+      const camposFila = fila.locator("select");
+      const total = await camposFila.count();
+      for (let i = 0; i < total; i++) {
+        const campo = camposFila.nth(i);
+        if (!(await campo.isVisible().catch(() => false))) continue;
+        const opcionesSelect = await campo.locator("option").allTextContents();
+        const match = opcionesSelect.find(
+          (o) => o.replace(/\s+/g, " ").trim().toUpperCase() === deducible.replace(/\s+/g, " ").trim().toUpperCase()
+        );
+        if (match) {
+          await campo.selectOption({ label: match });
+          resultado.deducibleAsignado = true;
+          break;
+        } else {
+          resultado.deducibleNoEncontrado = deducible;
+          resultado.deducibleOpcionesDisponibles = opcionesSelect;
+        }
+      }
+    }
+  } catch (e) {
+    resultado.error = e.message;
+  }
+  return resultado;
 }
 
 // -----------------------------------------------------------------------
@@ -419,7 +575,9 @@ app.post("/cotizar", async (req, res) => {
     await esperarOpcionesCargadas(page, "Modelo");
     await selectByLabel(page, "Modelo", String(datos.anio));
     await esperarOpcionesCargadas(page, "Version");
-    await selectByLabel(page, "Version", datos.version);
+    if (datos.version) {
+      await selectByLabel(page, "Version", datos.version);
+    }
     await page.waitForTimeout(500);
     await selectByLabel(page, "Uso", datos.uso);
     await esperarOpcionesCargadas(page, "Servicio");
@@ -483,6 +641,20 @@ app.post("/cotizar", async (req, res) => {
     } catch (e) {
       ultimoDiagnostico.errorRcPasajero = e.message;
       console.error("No se pudo asignar Responsabilidad Civil Pasajero:", e.message);
+    }
+
+    // Aplicamos los valores configurados de Suma Asegurada/Deducible: primero
+    // revisa si el Uso cae en un grupo especial (plataforma/reparto), si no,
+    // usa la tabla genérica por Tipo de Transporte + Tipo de Póliza
+    const configAplicable = obtenerConfigCobertura(datos.tipoTransporte, datos.tipoPoliza, datos.uso);
+    if (configAplicable) {
+      const resultadosCobertura = [];
+      for (const [nombreFila, valores] of Object.entries(configAplicable)) {
+        const r = await establecerCoberturaFila(page, nombreFila, valores);
+        resultadosCobertura.push(r);
+      }
+      ultimoDiagnostico.coberturasAplicadas = resultadosCobertura;
+      await page.waitForTimeout(1000);
     }
 
     // "Tocamos" cada dropdown de la tabla de coberturas (re-seleccionando su
