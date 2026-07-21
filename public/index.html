@@ -351,7 +351,8 @@ $("form-cotizacion").addEventListener("submit", async (e) => {
         ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}<br>
         ${anual ? `Total anual: <strong>$${anual}</strong>` : "Revisa el detalle con tu asesor"}
       </div>
-      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:16px">Descargar PDF de la cotizacion</a>` : ""}
+      ${pdfUrl ? `<a href="${pdfUrl}" download="cotizacion.pdf" id="link-pdf" style="display:block;text-align:center;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:4px">Descargar PDF de la cotizacion</a>
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin:0 0 16px">Se descarga a tu dispositivo, esta pantalla sigue abierta</p>` : ""}
       <div id="panel-decision">
         <p style="text-align:center;margin-bottom:10px">¿Deseas continuar con la contratacion?</p>
         <div style="display:flex;gap:10px">
