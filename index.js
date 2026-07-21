@@ -671,6 +671,30 @@ app.post("/cotizar", async (req, res) => {
     ultimoDiagnostico.resultadoFinal = { ok: true, pdfUrl, folioActual, anual: resultado.anual };
     await browser.close();
 
+    // Te mandamos el PDF por Telegram automáticamente en cuanto se genera
+    if (pdfUrl && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+      try {
+        const rutaLocalPdf = `public${pdfUrl}`;
+        const bufferPdf = fs.readFileSync(rutaLocalPdf);
+        const blobPdf = new Blob([bufferPdf]);
+        const formPdf = new FormData();
+        formPdf.append("chat_id", process.env.TELEGRAM_CHAT_ID);
+        formPdf.append(
+          "caption",
+          `🚗 Nueva cotización\n${datos.nombreCompleto || "-"} (${datos.telefono || "-"})\n` +
+          `${datos.marca} ${datos.modelo} ${datos.anio} — ${datos.tipoPoliza}\n` +
+          `Total anual: $${resultado.anual || "-"}`
+        );
+        formPdf.append("document", blobPdf, "cotizacion.pdf");
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendDocument`, {
+          method: "POST",
+          body: formPdf,
+        });
+      } catch (e) {
+        console.error("No se pudo mandar el PDF por Telegram:", e.message);
+      }
+    }
+
     return res.json({ ok: true, datosEnviados: datos, resultado: { ...resultado, pdfUrl, folioActual } });
   } catch (err) {
     let screenshotGuardado = false;
