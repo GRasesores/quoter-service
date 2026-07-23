@@ -687,8 +687,24 @@ app.post("/cotizar", async (req, res) => {
 
     // Aplicamos los valores configurados de Suma Asegurada/Deducible: primero
     // revisa si el Uso cae en un grupo especial (plataforma/reparto), si no,
-    // usa la tabla genérica por Tipo de Transporte + Tipo de Póliza
-    const configAplicable = obtenerConfigCobertura(datos.tipoTransporte, datos.tipoPoliza, datos.uso);
+    // usa la tabla genérica por Tipo de Transporte + Tipo de Póliza.
+    // Si viene "coberturasManual" en el request (formulario de Asesor), esos
+    // valores tienen prioridad fila por fila sobre el default; las filas que
+    // el asesor no tocó se quedan con el valor automático de siempre.
+    const configBase = obtenerConfigCobertura(datos.tipoTransporte, datos.tipoPoliza, datos.uso);
+    let configAplicable = configBase;
+    if (datos.coberturasManual && typeof datos.coberturasManual === "object") {
+      configAplicable = { ...(configBase || {}) };
+      for (const [nombreFila, valoresManual] of Object.entries(datos.coberturasManual)) {
+        const limpio = {};
+        if (valoresManual.suma !== undefined && valoresManual.suma !== "") limpio.suma = valoresManual.suma;
+        if (valoresManual.deducible !== undefined && valoresManual.deducible !== "") limpio.deducible = valoresManual.deducible;
+        if (Object.keys(limpio).length > 0) {
+          configAplicable[nombreFila] = { ...(configAplicable[nombreFila] || {}), ...limpio };
+        }
+      }
+      ultimoDiagnostico.coberturasManualRecibidas = datos.coberturasManual;
+    }
     let coberturasReales = null;
     if (configAplicable) {
       const resultadosCobertura = [];
@@ -961,6 +977,28 @@ app.get("/config", (req, res) => {
   res.json({ webhookUrl: process.env.N8N_WEBHOOK_URL || "" });
 });
 
+// -----------------------------------------------------------------------
+// GET /catalogo/filas-cobertura?tipoTransporte=Automóvil&tipoPoliza=AMPLIA&uso=PARTICULAR
+// Devuelve la lista de filas de cobertura aplicables y sus valores default
+// (los mismos que usaría el flujo automático), para que el formulario de
+// Asesor las muestre editables. No abre navegador — son datos ya en memoria.
+// -----------------------------------------------------------------------
+app.get("/catalogo/filas-cobertura", (req, res) => {
+  const tipoTransporte = req.query.tipoTransporte || "";
+  const tipoPoliza = normalizar(req.query.tipoPoliza || "");
+  const uso = normalizar(req.query.uso || "");
+  const config = obtenerConfigCobertura(tipoTransporte, tipoPoliza, uso);
+  if (!config) {
+    return res.json({ ok: true, filas: [] });
+  }
+  const filas = Object.entries(config).map(([nombre, valores]) => ({
+    nombre,
+    sumaDefault: valores.suma || null,
+    deducibleDefault: valores.deducible || null,
+  }));
+  res.json({ ok: true, filas });
+});
+
 // Recibe INE, Tarjeta de Circulación y (opcional) Constancia de Situación
 // Fiscal, y te los manda por Telegram junto con los datos del cliente
 app.post(
@@ -1158,6 +1196,34 @@ app.post("/enviar-cotizacion", async (req, res) => {
     return res.status(respuestaN8n.status).json({ ok: respuestaN8n.ok, ...datos });
   } catch (err) {
     console.error("Error reenviando a n8n:", err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Igual que /enviar-cotizacion pero para el formulario de Asesor: usa un
+// webhook de n8n SEPARADO (N8N_WEBHOOK_URL_ASESOR), para que este flujo sea
+// independiente del que usan los clientes y no se mezclen ni se pisen.
+app.post("/enviar-cotizacion-asesor", async (req, res) => {
+  const webhookUrl = process.env.N8N_WEBHOOK_URL_ASESOR;
+  if (!webhookUrl) {
+    return res.status(500).json({ ok: false, error: "N8N_WEBHOOK_URL_ASESOR no está configurada" });
+  }
+  try {
+    const respuestaN8n = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const texto = await respuestaN8n.text();
+    let datos;
+    try {
+      datos = JSON.parse(texto);
+    } catch {
+      datos = { textoCompleto: texto };
+    }
+    return res.status(respuestaN8n.status).json({ ok: respuestaN8n.ok, ...datos });
+  } catch (err) {
+    console.error("Error reenviando cotización de asesor a n8n:", err);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
