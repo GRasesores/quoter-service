@@ -300,15 +300,41 @@ async function esperarOpcionesCargadas(page, labelText, timeoutMs = 10000) {
   }
 }
 
+// Ubica, en la tabla de "Detalles de Cobertura" ya abierta, el índice de
+// columna real de "Suma Asegurada" y "Deducible" (por su encabezado, no por
+// posición asumida) — la comparten tanto la escritura como la lectura, así
+// ninguna de las dos se puede confundir con la columna extra de "Cant."
+async function obtenerColumnasCobertura(page) {
+  const tabla = page
+    .locator("table")
+    .filter({ hasText: "Suma Asegurada" })
+    .filter({ hasText: "Deducible" })
+    .first();
+  await tabla.waitFor({ state: "visible", timeout: 15000 });
+  let encabezados = await tabla.locator("thead tr").first().locator("th").allTextContents();
+  if (encabezados.length === 0) {
+    encabezados = await tabla.locator("tr").first().locator("th, td").allTextContents();
+  }
+  const idxSuma = encabezados.findIndex((h) => /suma\s*asegurada/i.test(h));
+  const idxDeducible = encabezados.findIndex((h) => /deducible/i.test(h));
+  return { tabla, idxSuma, idxDeducible };
+}
+
 // Asigna Suma Asegurada y/o Deducible a una fila específica de la tabla de
 // coberturas (ej. "Daños Materiales", "Responsabilidad Civil Pasajero").
+// Recibe idxSuma/idxDeducible (de obtenerColumnasCobertura) para escribir
+// SOLO en esa columna exacta — antes buscaba el primer input/select de la
+// fila sin distinguir columnas, y en filas con un selector extra de "Cant."
+// (ej. Responsabilidad Civil Daños a Terceros) terminaba escribiendo ahí
+// por error en vez de en la Suma Asegurada real.
 // La Suma Asegurada puede ser un <input> de texto libre O un <select> con
 // montos preestablecidos (varía según el tipo de póliza/cobertura); si es
 // un menú y el monto exacto no existe, toma el más cercano hacia ARRIBA
 // (nunca menos protección de la que se pidió). Nunca truena el flujo
 // completo si algo no se encuentra — solo lo reporta en el diagnóstico.
-async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
+async function establecerCoberturaFila(page, nombreFila, opciones = {}, columnas = {}) {
   const { suma, deducible } = opciones;
+  const { idxSuma, idxDeducible } = columnas;
   const resultado = { fila: nombreFila };
   try {
     const filaLabel = page.getByText(nombreFila, { exact: false }).first();
@@ -317,63 +343,51 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
     if (!visible) return resultado;
 
     const fila = filaLabel.locator("xpath=ancestor::tr[1]");
-    const camposFila = fila.locator("input, select");
-    const total = await camposFila.count();
+    const celdas = fila.locator("td");
 
-    let indiceUsadoParaSuma = -1;
-
-    if (suma !== undefined) {
+    if (suma !== undefined && idxSuma !== undefined && idxSuma !== -1) {
       const sumaObjetivo = Number(String(suma).replace(/\D/g, ""));
-      for (let i = 0; i < total; i++) {
-        const campo = camposFila.nth(i);
-        if (!(await campo.isVisible().catch(() => false))) continue;
-        const tag = await campo.evaluate((el) => el.tagName.toLowerCase());
-
+      const campo = celdas.nth(idxSuma).locator("input, select").first();
+      const hayCampo = (await campo.count().catch(() => 0)) > 0 && (await campo.isVisible().catch(() => false));
+      if (hayCampo) {
+        const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
         if (tag === "input") {
           await campo.fill(String(suma));
           resultado.sumaAsignada = true;
-          indiceUsadoParaSuma = i;
-          break;
-        }
-
-        if (tag === "select") {
+        } else if (tag === "select") {
           const opcionesSelect = await campo.locator("option").allTextContents();
-          // ¿Estas opciones parecen montos en dinero? (al menos una con $ o solo dígitos)
+          // Extraemos solo la parte entera del monto (antes del punto decimal),
+          // sin quitar el punto y pegar los centavos como si fueran dígitos
           const montos = opcionesSelect
             .map((o) => {
-              // Extraemos solo la parte entera del monto (antes del punto decimal),
-              // sin quitar el punto y pegar los centavos como si fueran dígitos
               const m = o.match(/([\d,]+)(?:\.\d+)?/);
               const numero = m ? Number(m[1].replace(/,/g, "")) : NaN;
               return { texto: o, numero };
             })
             .filter((o) => o.texto.trim() !== "" && !isNaN(o.numero) && o.numero > 0);
-          if (montos.length === 0) continue; // no es el select de montos, seguimos buscando
-
-          const exacto = montos.find((m) => m.numero === sumaObjetivo);
-          const masCercanoArriba = montos
-            .filter((m) => m.numero >= sumaObjetivo)
-            .sort((a, b) => a.numero - b.numero)[0];
-          const elegido = exacto || masCercanoArriba || montos[montos.length - 1];
-
-          await campo.selectOption({ label: elegido.texto });
-          resultado.sumaAsignada = true;
-          resultado.sumaSolicitada = sumaObjetivo;
-          resultado.sumaRealAsignada = elegido.numero;
-          indiceUsadoParaSuma = i;
-          break;
+          if (montos.length > 0) {
+            const exacto = montos.find((m) => m.numero === sumaObjetivo);
+            const masCercanoArriba = montos
+              .filter((m) => m.numero >= sumaObjetivo)
+              .sort((a, b) => a.numero - b.numero)[0];
+            const elegido = exacto || masCercanoArriba || montos[montos.length - 1];
+            await campo.selectOption({ label: elegido.texto });
+            resultado.sumaAsignada = true;
+            resultado.sumaSolicitada = sumaObjetivo;
+            resultado.sumaRealAsignada = elegido.numero;
+          } else {
+            resultado.sumaNoEncontrada = true;
+          }
         }
+      } else {
+        resultado.sumaNoEncontrada = true;
       }
-      if (indiceUsadoParaSuma === -1) resultado.sumaNoEncontrada = true;
     }
 
-    if (deducible !== undefined) {
-      for (let i = 0; i < total; i++) {
-        if (i === indiceUsadoParaSuma) continue; // no reusar el campo ya usado para suma
-        const campo = camposFila.nth(i);
-        const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
-        if (tag !== "select") continue;
-        if (!(await campo.isVisible().catch(() => false))) continue;
+    if (deducible !== undefined && idxDeducible !== undefined && idxDeducible !== -1) {
+      const campo = celdas.nth(idxDeducible).locator("select").first();
+      const hayCampo = (await campo.count().catch(() => 0)) > 0 && (await campo.isVisible().catch(() => false));
+      if (hayCampo) {
         const opcionesSelect = await campo.locator("option").allTextContents();
         const match = opcionesSelect.find(
           (o) => o.replace(/\s+/g, " ").trim().toUpperCase() === deducible.replace(/\s+/g, " ").trim().toUpperCase()
@@ -381,7 +395,6 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
         if (match) {
           await campo.selectOption({ label: match });
           resultado.deducibleAsignado = true;
-          break;
         } else {
           resultado.deducibleNoEncontrado = deducible;
           resultado.deducibleOpcionesDisponibles = opcionesSelect;
@@ -402,72 +415,54 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
 // humano, no una tabla fija en nuestro código). Solo lee, no modifica nada.
 async function leerTablaCoberturasEnVivo(page) {
   const resultado = [];
-  const tabla = page
-    .locator("table")
-    .filter({ hasText: "Suma Asegurada" })
-    .filter({ hasText: "Deducible" })
-    .first();
-  await tabla.waitFor({ state: "visible", timeout: 15000 });
+  const { tabla, idxSuma, idxDeducible } = await obtenerColumnasCobertura(page);
+  if (idxSuma === -1 || idxDeducible === -1) {
+    throw new Error("No se pudieron ubicar las columnas de Suma Asegurada/Deducible en la tabla de Maps");
+  }
+
+  // Espera con reintentos a que un <select> termine de poblar sus opciones
+  // (algunos, como el de RC Daños a Terceros, tardan más que los demás)
+  async function opcionesConEspera(select, timeoutMs = 4000) {
+    let opciones = [];
+    const inicio = Date.now();
+    while (Date.now() - inicio < timeoutMs) {
+      opciones = (await select.locator("option").allTextContents())
+        .map((o) => o.trim())
+        .filter((o) => o && !o.toLowerCase().includes("seleccione"));
+      if (opciones.length > 0) return opciones;
+      await page.waitForTimeout(300);
+    }
+    return opciones;
+  }
 
   const filas = tabla.locator("tbody tr");
   const totalFilas = await filas.count();
 
-  // Un select es de Deducible si TODAS sus opciones (con contenido real)
-  // se ven como porcentaje, UMA o "No Aplica" — nunca por posición.
-  const pareceDeducible = (opciones) =>
-    opciones.length > 0 && opciones.every((o) => /%|uma|no\s*aplica/i.test(o));
-
-  // Un select es de "Cantidad" (ej. número de pasajeros en RC Pasajero) si
-  // todas sus opciones son solo 1-2 dígitos — no es Suma ni Deducible, se ignora.
-  const pareceCantidad = (opciones) =>
-    opciones.length > 0 && opciones.every((o) => /^\d{1,2}$/.test(o.trim()));
-
   for (let i = 0; i < totalFilas; i++) {
     const fila = filas.nth(i);
-    const nombre = (await fila.locator("td").first().innerText().catch(() => "")).trim();
+    const celdas = fila.locator("td");
+    const nombre = (await celdas.first().innerText().catch(() => "")).trim();
     if (!nombre) continue;
 
-    const campos = fila.locator("input, select");
-    const totalCampos = await campos.count();
     const filaInfo = { nombre, suma: null, deducible: null };
-    const clasificados = [];
 
-    for (let j = 0; j < totalCampos; j++) {
-      const campo = campos.nth(j);
-      if (!(await campo.isVisible().catch(() => false))) continue;
-      const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
-
+    // ---------- Suma Asegurada: SOLO el campo dentro de esa columna exacta ----------
+    const campoSuma = celdas.nth(idxSuma).locator("input, select").first();
+    if ((await campoSuma.count().catch(() => 0)) > 0 && (await campoSuma.isVisible().catch(() => false))) {
+      const tag = await campoSuma.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
       if (tag === "input") {
-        clasificados.push({ tag, opciones: null, esDeducible: false, esCantidad: false });
-        continue;
-      }
-      if (tag === "select") {
-        const opciones = (await campo.locator("option").allTextContents())
-          .map((o) => o.trim())
-          .filter((o) => o && !o.toLowerCase().includes("seleccione"));
-        if (opciones.length === 0) continue;
-        clasificados.push({
-          tag,
-          opciones,
-          esDeducible: pareceDeducible(opciones),
-          esCantidad: pareceCantidad(opciones),
-        });
+        filaInfo.suma = { tipo: "texto_libre" };
+      } else if (tag === "select") {
+        const opciones = await opcionesConEspera(campoSuma);
+        if (opciones.length > 0) filaInfo.suma = { tipo: "lista", opciones };
       }
     }
 
-    // Suma = primer campo que no es ni Deducible ni un selector de Cantidad
-    const candidatoSuma = clasificados.find((c) => !c.esDeducible && !c.esCantidad);
-    if (candidatoSuma) {
-      filaInfo.suma =
-        candidatoSuma.tag === "input"
-          ? { tipo: "texto_libre" }
-          : { tipo: "lista", opciones: candidatoSuma.opciones };
-    }
-
-    // Deducible = primer select cuyas opciones se ven como %, uma o No Aplica
-    const candidatoDeducible = clasificados.find((c) => c.esDeducible);
-    if (candidatoDeducible) {
-      filaInfo.deducible = { tipo: "lista", opciones: candidatoDeducible.opciones };
+    // ---------- Deducible: SOLO el campo dentro de esa columna exacta ----------
+    const campoDeducible = celdas.nth(idxDeducible).locator("select").first();
+    if ((await campoDeducible.count().catch(() => 0)) > 0 && (await campoDeducible.isVisible().catch(() => false))) {
+      const opciones = await opcionesConEspera(campoDeducible);
+      if (opciones.length > 0) filaInfo.deducible = { tipo: "lista", opciones };
     }
 
     resultado.push(filaInfo);
@@ -790,8 +785,12 @@ app.post("/cotizar", async (req, res) => {
     if (configAplicable) {
       const resultadosCobertura = [];
       coberturasReales = {};
+      const columnasCobertura = await obtenerColumnasCobertura(page).catch((e) => {
+        ultimoDiagnostico.errorColumnasCobertura = e.message;
+        return { idxSuma: -1, idxDeducible: -1 };
+      });
       for (const [nombreFila, valores] of Object.entries(configAplicable)) {
-        const r = await establecerCoberturaFila(page, nombreFila, valores);
+        const r = await establecerCoberturaFila(page, nombreFila, valores, columnasCobertura);
         resultadosCobertura.push(r);
         // Solo la incluimos en lo que se le muestra al cliente si realmente
         // se encontró la fila (si no existe para esta cobertura, se omite)
