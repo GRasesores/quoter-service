@@ -394,6 +394,79 @@ async function establecerCoberturaFila(page, nombreFila, opciones = {}) {
   return resultado;
 }
 
+// Lee, EN VIVO, la tabla de "Detalles de Cobertura" que Maps Seguros ya
+// tiene abierta en pantalla (después de elegir Tipo de Cobertura): para
+// cada fila visible devuelve su nombre y las opciones REALES de Suma
+// Asegurada y Deducible que ofrece Maps para esa combinación exacta de
+// vehículo + uso + tipo de póliza (los mismos catálogos que usa un asesor
+// humano, no una tabla fija en nuestro código). Solo lee, no modifica nada.
+async function leerTablaCoberturasEnVivo(page) {
+  const resultado = [];
+  const tabla = page
+    .locator("table")
+    .filter({ hasText: "Suma Asegurada" })
+    .filter({ hasText: "Deducible" })
+    .first();
+  await tabla.waitFor({ state: "visible", timeout: 15000 });
+
+  const filas = tabla.locator("tbody tr");
+  const totalFilas = await filas.count();
+
+  for (let i = 0; i < totalFilas; i++) {
+    const fila = filas.nth(i);
+    const nombre = (await fila.locator("td").first().innerText().catch(() => "")).trim();
+    if (!nombre) continue;
+
+    const campos = fila.locator("input, select");
+    const totalCampos = await campos.count();
+    const filaInfo = { nombre, suma: null, deducible: null };
+    let indiceUsadoParaSuma = -1;
+
+    // Primer campo visible: si es input de texto libre, o un select con
+    // opciones de dinero (montos), lo tomamos como el campo de Suma Asegurada
+    for (let j = 0; j < totalCampos; j++) {
+      const campo = campos.nth(j);
+      if (!(await campo.isVisible().catch(() => false))) continue;
+      const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
+
+      if (tag === "input") {
+        filaInfo.suma = { tipo: "texto_libre" };
+        indiceUsadoParaSuma = j;
+        break;
+      }
+      if (tag === "select") {
+        const opciones = (await campo.locator("option").allTextContents())
+          .map((o) => o.trim())
+          .filter((o) => o && !o.toLowerCase().includes("seleccione"));
+        const pareceMontos = opciones.some((o) => /[\d,]{3,}/.test(o) && !/%|uma/i.test(o));
+        if (pareceMontos) {
+          filaInfo.suma = { tipo: "lista", opciones };
+          indiceUsadoParaSuma = j;
+          break;
+        }
+      }
+    }
+
+    // El siguiente select visible que no sea el de Suma es el de Deducible
+    for (let j = 0; j < totalCampos; j++) {
+      if (j === indiceUsadoParaSuma) continue;
+      const campo = campos.nth(j);
+      if (!(await campo.isVisible().catch(() => false))) continue;
+      const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
+      if (tag !== "select") continue;
+      const opciones = (await campo.locator("option").allTextContents())
+        .map((o) => o.trim())
+        .filter((o) => o && !o.toLowerCase().includes("seleccione"));
+      if (opciones.length === 0) continue;
+      filaInfo.deducible = { tipo: "lista", opciones };
+      break;
+    }
+
+    resultado.push(filaInfo);
+  }
+  return resultado;
+}
+
 // -----------------------------------------------------------------------
 // GET /catalogo/marcas?tipoTransporte=Automóvil
 // -----------------------------------------------------------------------
@@ -978,25 +1051,103 @@ app.get("/config", (req, res) => {
 });
 
 // -----------------------------------------------------------------------
-// GET /catalogo/filas-cobertura?tipoTransporte=Automóvil&tipoPoliza=AMPLIA&uso=PARTICULAR
-// Devuelve la lista de filas de cobertura aplicables y sus valores default
-// (los mismos que usaría el flujo automático), para que el formulario de
-// Asesor las muestre editables. No abre navegador — son datos ya en memoria.
+// GET /catalogo/coberturas?tipoTransporte=Automóvil&marca=X&modelo=Y&anio=2022
+//     &version=Z&uso=PARTICULAR&servicio=W&tipoPoliza=AMPLIA
+// Abre una sesión real en Maps Seguros, navega hasta "Detalles de Cobertura"
+// con ESE vehículo/uso/tipo de póliza exactos, y lee las filas y opciones
+// de Suma Asegurada/Deducible que Maps realmente ofrece — por eso RC,
+// LIMITADA y AMPLIA devuelven filas distintas, igual que en el sitio real.
+// Se cachea 24h por combinación exacta para no repetir el proceso siempre.
 // -----------------------------------------------------------------------
-app.get("/catalogo/filas-cobertura", (req, res) => {
-  const tipoTransporte = req.query.tipoTransporte || "";
-  const tipoPoliza = normalizar(req.query.tipoPoliza || "");
-  const uso = normalizar(req.query.uso || "");
-  const config = obtenerConfigCobertura(tipoTransporte, tipoPoliza, uso);
-  if (!config) {
-    return res.json({ ok: true, filas: [] });
+app.get("/catalogo/coberturas", async (req, res) => {
+  const { tipoTransporte, marca, modelo, anio, version, uso, servicio, tipoPoliza } = req.query;
+  if (!tipoTransporte || !marca || !modelo || !anio || !uso || !servicio || !tipoPoliza) {
+    return res.status(400).json({
+      ok: false,
+      error: "Faltan datos del vehículo (marca, modelo, año, uso, servicio y tipo de póliza) para consultar las coberturas reales en Maps",
+    });
   }
-  const filas = Object.entries(config).map(([nombre, valores]) => ({
-    nombre,
-    sumaDefault: valores.suma || null,
-    deducibleDefault: valores.deducible || null,
-  }));
-  res.json({ ok: true, filas });
+
+  const claveCache = [
+    "coberturasVivo",
+    normalizar(tipoTransporte),
+    normalizar(marca),
+    normalizar(modelo),
+    normalizar(String(anio)),
+    normalizar(version || ""),
+    normalizar(uso),
+    normalizar(servicio),
+    normalizar(tipoPoliza),
+  ].join(":");
+  const cacheado = cacheGet(claveCache);
+  if (cacheado) return res.json({ ok: true, filas: cacheado, cache: true });
+
+  try {
+    const filas = await encolar(async () => {
+      const sesion = await abrirCotizadorLogueado();
+      const { browser, page } = sesion;
+      try {
+        // ---------- Datos del Cliente (cliente de ejemplo, igual que /cotizar) ----------
+        const datosClienteTab = page.getByText("Datos del Cliente", { exact: true });
+        await datosClienteTab.waitFor({ state: "visible", timeout: 30000 });
+        await datosClienteTab.click();
+        const clienteBox = await localizarVisibleEntreCandidatos(
+          page,
+          `//label[contains(text(),"Cliente:")]/following::*[self::input or self::span or self::div][1]`
+        );
+        await clienteBox.click();
+        await page.keyboard.type("CLIENTE EJEMPLO", { delay: 50 });
+        await page.waitForTimeout(1500);
+        await page.keyboard.press("ArrowDown");
+        await page.waitForTimeout(300);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(1000);
+        await page.waitForLoadState("networkidle").catch(() => {});
+        await page.waitForTimeout(2000);
+
+        // ---------- Datos de la Unidad ----------
+        const datosUnidadTab = page.getByText("Datos de la Unidad", { exact: true });
+        await datosUnidadTab.waitFor({ state: "visible", timeout: 40000 });
+        await datosUnidadTab.click();
+        await page.waitForTimeout(500);
+        await selectByLabel(page, "Tipo de Transporte", tipoTransporte);
+        await page.waitForTimeout(500);
+        await selectByLabel(page, "Marca", normalizar(marca));
+        await esperarOpcionesCargadas(page, "Submarca");
+        await selectByLabel(page, "Submarca", normalizar(modelo));
+        await esperarOpcionesCargadas(page, "Modelo");
+        await selectByLabel(page, "Modelo", String(anio));
+        await esperarOpcionesCargadas(page, "Version");
+        if (version) await selectByLabel(page, "Version", normalizar(version));
+        await page.waitForTimeout(500);
+        await selectByLabel(page, "Uso", normalizar(uso));
+        await esperarOpcionesCargadas(page, "Servicio");
+        await selectByLabel(page, "Servicio", servicio);
+        await selectByLabel(page, "Flotilla", "Descuento Flotilla AA 11 A 20");
+
+        // ---------- Detalles de Cobertura ----------
+        const coberturaTab = page.getByText("Detalles de Cobertura", { exact: true });
+        await coberturaTab.waitFor({ state: "visible", timeout: 30000 });
+        await coberturaTab.click();
+        await page.waitForTimeout(500);
+        const mapaTipoCobertura = { RC: "RESPONSABILIDAD CIVIL", LIMITADA: "LIMITADA", AMPLIA: "AMPLIA" };
+        const tipoCoberturaReal = mapaTipoCobertura[normalizar(tipoPoliza)] || tipoPoliza;
+        await selectByLabel(page, "Tipo de Cobertura", tipoCoberturaReal);
+        await page.waitForLoadState("networkidle").catch(() => {});
+        await page.waitForTimeout(2500);
+
+        return await leerTablaCoberturasEnVivo(page);
+      } finally {
+        await browser.close().catch(() => {});
+      }
+    });
+
+    cacheSet(claveCache, filas);
+    res.json({ ok: true, filas, cache: false });
+  } catch (e) {
+    console.error("Error leyendo coberturas en vivo:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // Recibe INE, Tarjeta de Circulación y (opcional) Constancia de Situación
