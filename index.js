@@ -412,6 +412,16 @@ async function leerTablaCoberturasEnVivo(page) {
   const filas = tabla.locator("tbody tr");
   const totalFilas = await filas.count();
 
+  // Un select es de Deducible si TODAS sus opciones (con contenido real)
+  // se ven como porcentaje, UMA o "No Aplica" — nunca por posición.
+  const pareceDeducible = (opciones) =>
+    opciones.length > 0 && opciones.every((o) => /%|uma|no\s*aplica/i.test(o));
+
+  // Un select es de "Cantidad" (ej. número de pasajeros en RC Pasajero) si
+  // todas sus opciones son solo 1-2 dígitos — no es Suma ni Deducible, se ignora.
+  const pareceCantidad = (opciones) =>
+    opciones.length > 0 && opciones.every((o) => /^\d{1,2}$/.test(o.trim()));
+
   for (let i = 0; i < totalFilas; i++) {
     const fila = filas.nth(i);
     const nombre = (await fila.locator("td").first().innerText().catch(() => "")).trim();
@@ -420,46 +430,44 @@ async function leerTablaCoberturasEnVivo(page) {
     const campos = fila.locator("input, select");
     const totalCampos = await campos.count();
     const filaInfo = { nombre, suma: null, deducible: null };
-    let indiceUsadoParaSuma = -1;
+    const clasificados = [];
 
-    // Primer campo visible: si es input de texto libre, o un select con
-    // opciones de dinero (montos), lo tomamos como el campo de Suma Asegurada
     for (let j = 0; j < totalCampos; j++) {
       const campo = campos.nth(j);
       if (!(await campo.isVisible().catch(() => false))) continue;
       const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
 
       if (tag === "input") {
-        filaInfo.suma = { tipo: "texto_libre" };
-        indiceUsadoParaSuma = j;
-        break;
+        clasificados.push({ tag, opciones: null, esDeducible: false, esCantidad: false });
+        continue;
       }
       if (tag === "select") {
         const opciones = (await campo.locator("option").allTextContents())
           .map((o) => o.trim())
           .filter((o) => o && !o.toLowerCase().includes("seleccione"));
-        const pareceMontos = opciones.some((o) => /[\d,]{3,}/.test(o) && !/%|uma/i.test(o));
-        if (pareceMontos) {
-          filaInfo.suma = { tipo: "lista", opciones };
-          indiceUsadoParaSuma = j;
-          break;
-        }
+        if (opciones.length === 0) continue;
+        clasificados.push({
+          tag,
+          opciones,
+          esDeducible: pareceDeducible(opciones),
+          esCantidad: pareceCantidad(opciones),
+        });
       }
     }
 
-    // El siguiente select visible que no sea el de Suma es el de Deducible
-    for (let j = 0; j < totalCampos; j++) {
-      if (j === indiceUsadoParaSuma) continue;
-      const campo = campos.nth(j);
-      if (!(await campo.isVisible().catch(() => false))) continue;
-      const tag = await campo.evaluate((el) => el.tagName.toLowerCase()).catch(() => null);
-      if (tag !== "select") continue;
-      const opciones = (await campo.locator("option").allTextContents())
-        .map((o) => o.trim())
-        .filter((o) => o && !o.toLowerCase().includes("seleccione"));
-      if (opciones.length === 0) continue;
-      filaInfo.deducible = { tipo: "lista", opciones };
-      break;
+    // Suma = primer campo que no es ni Deducible ni un selector de Cantidad
+    const candidatoSuma = clasificados.find((c) => !c.esDeducible && !c.esCantidad);
+    if (candidatoSuma) {
+      filaInfo.suma =
+        candidatoSuma.tag === "input"
+          ? { tipo: "texto_libre" }
+          : { tipo: "lista", opciones: candidatoSuma.opciones };
+    }
+
+    // Deducible = primer select cuyas opciones se ven como %, uma o No Aplica
+    const candidatoDeducible = clasificados.find((c) => c.esDeducible);
+    if (candidatoDeducible) {
+      filaInfo.deducible = { tipo: "lista", opciones: candidatoDeducible.opciones };
     }
 
     resultado.push(filaInfo);
