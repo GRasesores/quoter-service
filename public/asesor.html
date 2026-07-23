@@ -205,7 +205,6 @@ function cargarServicios() {
       $("servicio").innerHTML = `<option value="">Error: ${e.message}</option>`;
     })
     .finally(() => mostrarSpinner("servicio", false));
-  cargarFilasCobertura();
 }
 $("uso").addEventListener("change", cargarServicios);
 
@@ -226,7 +225,6 @@ function cargarMarcas() {
       $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
     })
     .finally(() => mostrarSpinner("marca", false));
-  cargarFilasCobertura();
 }
 
 cargarMarcas();
@@ -302,47 +300,105 @@ $("anio").addEventListener("change", () => {
     .finally(() => mostrarSpinner("version", false));
 });
 
-// ---------- Tabla de coberturas editable ----------
-function cargarFilasCobertura() {
-  const tipoTransporte = $("tipoTransporte").value;
-  const tipoPoliza = $("tipoPoliza").value;
-  const uso = $("uso").value;
+// ---------- Tabla de coberturas editable (en vivo desde Maps) ----------
+function datosVehiculoCompletos() {
+  return (
+    $("tipoTransporte").value &&
+    $("marca").value &&
+    $("submarca").value &&
+    $("anio").value &&
+    $("uso").value &&
+    $("servicio").value &&
+    $("tipoPoliza").value
+  );
+}
+
+let ultimaClaveCobertura = "";
+
+function intentarCargarCoberturas() {
   const bloque = $("bloque-coberturas");
   const cuerpo = $("tabla-coberturas-body");
+  if (!datosVehiculoCompletos()) {
+    bloque.style.display = "none";
+    cuerpo.innerHTML = "";
+    ultimaClaveCobertura = "";
+    return;
+  }
 
-  fetch(`/catalogo/filas-cobertura?tipoTransporte=${encodeURIComponent(tipoTransporte)}&tipoPoliza=${encodeURIComponent(tipoPoliza)}&uso=${encodeURIComponent(uso)}`)
+  const params = {
+    tipoTransporte: $("tipoTransporte").value,
+    marca: $("marca").value,
+    modelo: $("submarca").value,
+    anio: $("anio").value,
+    version: $("version").value,
+    uso: $("uso").value,
+    servicio: $("servicio").value,
+    tipoPoliza: $("tipoPoliza").value,
+  };
+  const clave = JSON.stringify(params);
+  if (clave === ultimaClaveCobertura) return; // ya está cargada esta combinación exacta
+  ultimaClaveCobertura = clave;
+
+  bloque.style.display = "block";
+  cuerpo.innerHTML = `<tr><td colspan="3" style="padding:14px 4px;color:var(--muted);font-size:13px">
+    <span class="spinner"></span>Consultando coberturas reales en Maps para este vehículo (puede tardar hasta 30 segundos)...
+  </td></tr>`;
+
+  const qs = new URLSearchParams(params).toString();
+  fetch(`/catalogo/coberturas?${qs}`)
     .then((r) => r.json())
     .then((data) => {
-      if (!data.ok || !data.filas || data.filas.length === 0) {
-        bloque.style.display = "none";
-        cuerpo.innerHTML = "";
+      if (clave !== ultimaClaveCobertura) return; // el usuario ya cambió algo mientras cargaba
+      if (!data.ok) throw new Error(data.error || "No se pudieron leer las coberturas");
+      if (!data.filas || data.filas.length === 0) {
+        cuerpo.innerHTML = `<tr><td colspan="3" style="padding:10px 4px;color:var(--muted);font-size:13px">No se encontraron filas de cobertura editables para esta combinación.</td></tr>`;
         return;
       }
-      cuerpo.innerHTML = data.filas.map((fila, i) => `
-        <tr>
-          <td class="nombre-fila">${fila.nombre}</td>
-          <td><input type="text" data-cobertura-idx="${i}" data-campo="suma" placeholder="${fila.sumaDefault || 'Automático'}"></td>
-          <td><input type="text" data-cobertura-idx="${i}" data-campo="deducible" placeholder="${fila.deducibleDefault || 'Automático'}"></td>
-        </tr>
-      `).join("");
       cuerpo.dataset.nombres = JSON.stringify(data.filas.map((f) => f.nombre));
-      bloque.style.display = "block";
+      cuerpo.innerHTML = data.filas
+        .map((fila, i) => {
+          const campoSuma =
+            fila.suma && fila.suma.tipo === "lista"
+              ? `<select data-cobertura-idx="${i}" data-campo="suma"><option value="">Automático</option>${fila.suma.opciones
+                  .map((o) => `<option value="${o.replace(/"/g, "&quot;")}">${o}</option>`)
+                  .join("")}</select>`
+              : fila.suma && fila.suma.tipo === "texto_libre"
+              ? `<input type="text" data-cobertura-idx="${i}" data-campo="suma" placeholder="Automático">`
+              : `<span style="color:var(--muted);font-size:13px">Amparada</span>`;
+
+          const campoDeducible =
+            fila.deducible && fila.deducible.tipo === "lista"
+              ? `<select data-cobertura-idx="${i}" data-campo="deducible"><option value="">Automático</option>${fila.deducible.opciones
+                  .map((o) => `<option value="${o.replace(/"/g, "&quot;")}">${o}</option>`)
+                  .join("")}</select>`
+              : `<span style="color:var(--muted);font-size:13px">-</span>`;
+
+          return `<tr>
+            <td class="nombre-fila">${fila.nombre}</td>
+            <td>${campoSuma}</td>
+            <td>${campoDeducible}</td>
+          </tr>`;
+        })
+        .join("");
     })
-    .catch(() => {
-      bloque.style.display = "none";
+    .catch((e) => {
+      cuerpo.innerHTML = `<tr><td colspan="3" style="padding:10px 4px;color:var(--error);font-size:13px">Error consultando coberturas en Maps: ${e.message}. Puedes continuar, se usarán los valores automáticos.</td></tr>`;
     });
 }
-$("tipoPoliza").addEventListener("change", cargarFilasCobertura);
+
+["tipoTransporte", "marca", "submarca", "anio", "version", "uso", "servicio", "tipoPoliza"].forEach((id) => {
+  $(id).addEventListener("change", intentarCargarCoberturas);
+});
 
 function leerCoberturasManual() {
   const cuerpo = $("tabla-coberturas-body");
   const nombres = JSON.parse(cuerpo.dataset.nombres || "[]");
   const resultado = {};
   nombres.forEach((nombre, i) => {
-    const inputSuma = cuerpo.querySelector(`input[data-cobertura-idx="${i}"][data-campo="suma"]`);
-    const inputDeducible = cuerpo.querySelector(`input[data-cobertura-idx="${i}"][data-campo="deducible"]`);
-    const suma = inputSuma ? inputSuma.value.trim() : "";
-    const deducible = inputDeducible ? inputDeducible.value.trim() : "";
+    const campoSuma = cuerpo.querySelector(`[data-cobertura-idx="${i}"][data-campo="suma"]`);
+    const campoDeducible = cuerpo.querySelector(`[data-cobertura-idx="${i}"][data-campo="deducible"]`);
+    const suma = campoSuma ? campoSuma.value.trim() : "";
+    const deducible = campoDeducible ? campoDeducible.value.trim() : "";
     if (suma || deducible) {
       resultado[nombre] = {};
       if (suma) resultado[nombre].suma = suma;
