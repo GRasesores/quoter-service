@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cotizador Asesor - MAPS Seguros</title>
+<style>
+  :root {
+    --navy: #0a1128;
+    --navy2: #10182f;
+    --gold: #c8a96e;
+    --text: #eae6da;
+    --muted: #9a97a0;
+    --error: #e05252;
+  }
+  .logo { display: block; margin: 0 auto 20px; max-width: 140px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 600; color: var(--gold); margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 24px; }
+  .badge {
+    display: inline-block; background: rgba(200,169,110,0.15); color: var(--gold);
+    border: 1px solid var(--gold); border-radius: 4px; padding: 2px 8px;
+    font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px;
+  }
+  label {
+    display: block; font-size: 13px; color: var(--muted); margin: 16px 0 6px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  select, input {
+    width: 100%; padding: 12px 14px; background: var(--navy2);
+    border: 1px solid #2a3252; border-radius: 6px; color: var(--text); font-size: 15px;
+  }
+  select:disabled { opacity: 0.4; cursor: not-allowed; }
+  button {
+    width: 100%; margin-top: 28px; padding: 14px; background: var(--gold);
+    color: var(--navy); border: none; border-radius: 6px; font-size: 16px;
+    font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #estado {
+    margin-top: 20px; padding: 14px; border-radius: 6px; display: none;
+    font-size: 14px; line-height: 1.5;
+  }
+  #estado.cargando { display: block; background: #1b2444; color: var(--text); }
+  #estado.error { display: block; background: rgba(224,82,82,0.15); color: var(--error); border: 1px solid var(--error); }
+  #estado.exito { display: block; background: rgba(200,169,110,0.12); color: var(--gold); border: 1px solid var(--gold); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted);
+    border-top-color: var(--gold); border-radius: 50%; animation: girar 0.8s linear infinite;
+    margin-right: 8px; vertical-align: middle;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  #bloque-coberturas {
+    margin-top: 24px; background: var(--navy2); border: 1px solid #2a3252;
+    border-radius: 8px; padding: 14px; display: none;
+  }
+  #bloque-coberturas p.nota {
+    font-size: 12px; color: var(--muted); margin: 0 0 12px;
+  }
+  table.coberturas { width: 100%; border-collapse: collapse; }
+  table.coberturas th {
+    text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 6px 4px; border-bottom: 1px solid #2a3252;
+  }
+  table.coberturas td { padding: 6px 4px; vertical-align: top; }
+  table.coberturas td.nombre-fila { font-size: 13px; padding-top: 12px; }
+  table.coberturas input {
+    padding: 8px 10px; font-size: 13px; margin: 0;
+  }
+  table.coberturas input::placeholder { color: #5c6480; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img src="/logo.png" alt="Maps Seguros" class="logo">
+  <span class="badge">Uso interno · Asesor</span>
+  <h1>Cotizador Asesor</h1>
+  <p class="sub">Llena los datos del cliente y ajusta la Suma Asegurada / Deducible de cada cobertura si lo necesitas. Deja una fila en blanco para usar el valor automático de siempre.</p>
+
+  <form id="form-cotizacion">
+    <label>Tipo de Transporte</label>
+    <select id="tipoTransporte" required>
+      <option value="Automóvil">Automóvil</option>
+      <option value="Camión">Camión</option>
+      <option value="Motocicleta">Motocicleta</option>
+    </select>
+
+    <label>Marca <span class="spinner" id="spinner-marca" style="display:none"></span></label>
+    <select id="marca" required><option value="">Cargando marcas...</option></select>
+
+    <label>Submarca (Modelo) <span class="spinner" id="spinner-submarca" style="display:none"></span></label>
+    <select id="submarca" disabled required><option value="">Selecciona una marca primero</option></select>
+
+    <label>Año <span class="spinner" id="spinner-anio" style="display:none"></span></label>
+    <select id="anio" disabled required><option value="">Selecciona una submarca primero</option></select>
+
+    <label>Version <span class="spinner" id="spinner-version" style="display:none"></span></label>
+    <select id="version" disabled required><option value="">Selecciona un año primero</option></select>
+
+    <label>Uso</label>
+    <select id="uso" required></select>
+
+    <label>Servicio <span class="spinner" id="spinner-servicio" style="display:none"></span></label>
+    <select id="servicio" disabled required><option value="">Selecciona un uso primero</option></select>
+
+    <label>Tipo de Poliza</label>
+    <select id="tipoPoliza" required>
+      <option value="RC">RC</option>
+      <option value="LIMITADA">Limitada</option>
+      <option value="AMPLIA">Amplia</option>
+    </select>
+
+    <div id="bloque-coberturas">
+      <p class="nota">Coberturas para esta combinación. En blanco = se usa el valor automático que ya está configurado.</p>
+      <table class="coberturas" id="tabla-coberturas">
+        <thead>
+          <tr><th>Cobertura</th><th>Suma Asegurada</th><th>Deducible</th></tr>
+        </thead>
+        <tbody id="tabla-coberturas-body"></tbody>
+      </table>
+    </div>
+
+    <label>Nombre completo</label>
+    <input type="text" id="nombreCompleto" required>
+
+    <label>Codigo postal</label>
+    <input type="text" id="codigoPostal" required>
+
+    <label>Telefono WhatsApp</label>
+    <input type="tel" id="telefono" required>
+
+    <label>Correo electronico</label>
+    <input type="email" id="correo" required>
+
+    <button type="submit" id="btn-submit">Cotizar</button>
+  </form>
+
+  <div id="estado"></div>
+</div>
+
+<script>
+const USOS = [
+  "PARTICULAR","EXCLUSIVO UBER","EXCLUSIVO DIDI","CONDUCTOR APP","EXTENSION APP",
+  "INDRIVER","BOLT","MIXTO","TAXI","MOTOTAXI","CARGA A y B PESADO","CARGA C",
+  "CARGA LIGERA","REPARTO","REPARTO APP","AUTO ESCUELA","EMERGENCIAS",
+  "GASTOS FUNERARIOS","GASTOS MEDICOS","GRUA","INYECCION DE PRIMA",
+  "RC OBLIGATORIA","RENTA DIARIA","SEGURO AUTOPISTA","SEGURO DE VIDA",
+  "TRANSFER","TRANSPORTE DE PERSONAL","TRANSPORTE ESCOLAR",
+  "TRANSPORTE PUBLICO","TRANSPORTE TURISMO"
+];
+
+const $ = (id) => document.getElementById(id);
+const estado = $("estado");
+
+function llenarSelect(select, opciones, placeholder) {
+  select.innerHTML = "";
+  const optVacia = document.createElement("option");
+  optVacia.value = "";
+  optVacia.textContent = placeholder;
+  select.appendChild(optVacia);
+  opciones.forEach((op) => {
+    const o = document.createElement("option");
+    o.value = op;
+    o.textContent = op;
+    select.appendChild(o);
+  });
+}
+
+function resetear(select, placeholder) {
+  select.innerHTML = `<option value="">${placeholder}</option>`;
+  select.disabled = true;
+}
+
+llenarSelect($("uso"), USOS, "Selecciona una opcion");
+
+function mostrarSpinner(id, mostrar) {
+  const el = document.getElementById(`spinner-${id}`);
+  if (el) el.style.display = mostrar ? "inline-block" : "none";
+}
+
+function cargarServicios() {
+  const tipoTransporte = $("tipoTransporte").value;
+  const uso = $("uso").value;
+  resetear($("servicio"), "Selecciona un uso primero");
+  if (!uso) return;
+  $("servicio").innerHTML = `<option value="">Cargando servicios...</option>`;
+  mostrarSpinner("servicio", true);
+  fetch(`/catalogo/servicios?tipoTransporte=${encodeURIComponent(tipoTransporte)}&uso=${encodeURIComponent(uso)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || "No se pudieron cargar los servicios");
+      llenarSelect($("servicio"), data.servicios, "Selecciona un servicio");
+      $("servicio").disabled = false;
+    })
+    .catch((e) => {
+      $("servicio").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("servicio", false));
+  cargarFilasCobertura();
+}
+$("uso").addEventListener("change", cargarServicios);
+
+function cargarMarcas() {
+  const tipoTransporte = $("tipoTransporte").value;
+  resetear($("submarca"), "Selecciona una marca primero");
+  resetear($("anio"), "Selecciona una submarca primero");
+  resetear($("version"), "Selecciona un año primero");
+  $("marca").innerHTML = `<option value="">Cargando marcas...</option>`;
+  mostrarSpinner("marca", true);
+  fetch(`/catalogo/marcas?tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || "No se pudieron cargar las marcas");
+      llenarSelect($("marca"), data.marcas, "Selecciona una marca");
+    })
+    .catch((e) => {
+      $("marca").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("marca", false));
+  cargarFilasCobertura();
+}
+
+cargarMarcas();
+$("tipoTransporte").addEventListener("change", cargarMarcas);
+
+$("marca").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
+  const marca = $("marca").value;
+  resetear($("submarca"), "Cargando...");
+  resetear($("anio"), "Selecciona una submarca primero");
+  resetear($("version"), "Selecciona un año primero");
+  if (!marca) return;
+  mostrarSpinner("submarca", true);
+  fetch(`/catalogo/submarcas?marca=${encodeURIComponent(marca)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      llenarSelect($("submarca"), data.submarcas, "Selecciona una submarca");
+      $("submarca").disabled = false;
+    })
+    .catch((e) => {
+      $("submarca").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("submarca", false));
+});
+
+$("submarca").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
+  const marca = $("marca").value;
+  const submarca = $("submarca").value;
+  resetear($("anio"), "Cargando...");
+  resetear($("version"), "Selecciona un año primero");
+  if (!submarca) return;
+  mostrarSpinner("anio", true);
+  fetch(`/catalogo/anios?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      llenarSelect($("anio"), data.anios, "Selecciona un año");
+      $("anio").disabled = false;
+    })
+    .catch((e) => {
+      $("anio").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("anio", false));
+});
+
+$("anio").addEventListener("change", () => {
+  const tipoTransporte = $("tipoTransporte").value;
+  const marca = $("marca").value;
+  const submarca = $("submarca").value;
+  const anio = $("anio").value;
+  resetear($("version"), "Cargando...");
+  if (!anio) return;
+  mostrarSpinner("version", true);
+  fetch(`/catalogo/versiones?marca=${encodeURIComponent(marca)}&submarca=${encodeURIComponent(submarca)}&anio=${encodeURIComponent(anio)}&tipoTransporte=${encodeURIComponent(tipoTransporte)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error);
+      if (!data.versiones || data.versiones.length === 0) {
+        $("version").innerHTML = `<option value="">Sin versiones disponibles (puedes continuar)</option>`;
+        $("version").disabled = false;
+        $("version").required = false;
+        return;
+      }
+      llenarSelect($("version"), data.versiones, "Selecciona una version");
+      $("version").disabled = false;
+      $("version").required = true;
+    })
+    .catch((e) => {
+      $("version").innerHTML = `<option value="">Error: ${e.message}</option>`;
+    })
+    .finally(() => mostrarSpinner("version", false));
+});
+
+// ---------- Tabla de coberturas editable ----------
+function cargarFilasCobertura() {
+  const tipoTransporte = $("tipoTransporte").value;
+  const tipoPoliza = $("tipoPoliza").value;
+  const uso = $("uso").value;
+  const bloque = $("bloque-coberturas");
+  const cuerpo = $("tabla-coberturas-body");
+
+  fetch(`/catalogo/filas-cobertura?tipoTransporte=${encodeURIComponent(tipoTransporte)}&tipoPoliza=${encodeURIComponent(tipoPoliza)}&uso=${encodeURIComponent(uso)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.ok || !data.filas || data.filas.length === 0) {
+        bloque.style.display = "none";
+        cuerpo.innerHTML = "";
+        return;
+      }
+      cuerpo.innerHTML = data.filas.map((fila, i) => `
+        <tr>
+          <td class="nombre-fila">${fila.nombre}</td>
+          <td><input type="text" data-cobertura-idx="${i}" data-campo="suma" placeholder="${fila.sumaDefault || 'Automático'}"></td>
+          <td><input type="text" data-cobertura-idx="${i}" data-campo="deducible" placeholder="${fila.deducibleDefault || 'Automático'}"></td>
+        </tr>
+      `).join("");
+      cuerpo.dataset.nombres = JSON.stringify(data.filas.map((f) => f.nombre));
+      bloque.style.display = "block";
+    })
+    .catch(() => {
+      bloque.style.display = "none";
+    });
+}
+$("tipoPoliza").addEventListener("change", cargarFilasCobertura);
+
+function leerCoberturasManual() {
+  const cuerpo = $("tabla-coberturas-body");
+  const nombres = JSON.parse(cuerpo.dataset.nombres || "[]");
+  const resultado = {};
+  nombres.forEach((nombre, i) => {
+    const inputSuma = cuerpo.querySelector(`input[data-cobertura-idx="${i}"][data-campo="suma"]`);
+    const inputDeducible = cuerpo.querySelector(`input[data-cobertura-idx="${i}"][data-campo="deducible"]`);
+    const suma = inputSuma ? inputSuma.value.trim() : "";
+    const deducible = inputDeducible ? inputDeducible.value.trim() : "";
+    if (suma || deducible) {
+      resultado[nombre] = {};
+      if (suma) resultado[nombre].suma = suma;
+      if (deducible) resultado[nombre].deducible = deducible;
+    }
+  });
+  return resultado;
+}
+
+$("form-cotizacion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("btn-submit");
+  btn.disabled = true;
+  estado.className = "cargando";
+  estado.innerHTML = '<span class="spinner"></span>Cotizando en Maps Seguros y generando el PDF, esto puede tardar hasta 2 minutos...';
+
+  const payload = {
+    origen: "Asesor",
+    tipoTransporte: $("tipoTransporte").value,
+    marca: $("marca").value,
+    modelo: $("submarca").value,
+    anio: $("anio").value,
+    version: $("version").value,
+    uso: $("uso").value,
+    servicio: $("servicio").value,
+    tipoPoliza: $("tipoPoliza").value,
+    nombreCompleto: $("nombreCompleto").value,
+    codigoPostal: $("codigoPostal").value,
+    telefono: $("telefono").value,
+    correo: $("correo").value,
+    coberturasManual: leerCoberturasManual(),
+  };
+
+  try {
+    const res = await fetch("/enviar-cotizacion-asesor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const datos = await res.json();
+    if (!datos.ok) {
+      const motivo = datos.error || datos.message || `Error ${res.status}`;
+      throw new Error(`${motivo} (revisa que el workflow de n8n del Asesor esté Activo)`);
+    }
+
+    const anual = datos.Anual || datos.anual || (datos.resultado && datos.resultado.anual) || null;
+    const pdfUrl = datos.pdfUrl || (datos.resultado && datos.resultado.pdfUrl) || null;
+    const importeBase = datos.resultado && datos.resultado.importeBase;
+    const extras = datos.resultado && datos.resultado.extras;
+    const descuento = datos.resultado && datos.resultado.descuento;
+    const coberturas = datos.resultado && datos.resultado.coberturas;
+
+    const formatoValor = (v) => {
+      if (v === undefined || v === null) return "-";
+      const soloDigitos = String(v).replace(/\D/g, "");
+      if (soloDigitos && soloDigitos === String(v).trim()) {
+        return "$" + Number(soloDigitos).toLocaleString("es-MX");
+      }
+      return v;
+    };
+
+    const filaDesglose = (etiqueta, valor) =>
+      valor ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">${etiqueta}</span><span>$${valor}</span></div>` : "";
+
+    const tablaCoberturas = coberturas
+      ? `<div style="margin:14px 0">
+          <p style="text-align:center;font-size:13px;color:var(--muted);margin:0 0 8px">Coberturas de la poliza</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr style="color:var(--muted);text-align:left"><th style="padding:4px 0;font-weight:600">Cobertura</th><th style="padding:4px 0;font-weight:600">Suma</th><th style="padding:4px 0;font-weight:600;text-align:right">Deducible</th></tr>
+            ${Object.entries(coberturas)
+              .map(
+                ([nombre, v]) =>
+                  `<tr style="border-top:1px solid #2a3252"><td style="padding:6px 0">${nombre}</td><td style="padding:6px 0">${v.suma ? formatoValor(v.suma) : "Amparada"}</td><td style="padding:6px 0;text-align:right">${v.deducible || "-"}</td></tr>`
+              )
+              .join("")}
+          </table>
+        </div>`
+      : "";
+
+    estado.className = "exito";
+    estado.innerHTML = `
+      <div><strong>Cotizacion lista</strong></div>
+      <div style="margin:10px 0">
+        ${payload.marca} ${payload.modelo} ${payload.anio} — ${payload.tipoPoliza}
+      </div>
+      ${(importeBase || extras || descuento || anual) ? `
+        <div style="background:var(--navy2);border-radius:6px;padding:12px 14px">
+          ${filaDesglose("Importe Base", importeBase)}
+          ${filaDesglose("Extras", extras)}
+          ${descuento ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span style="color:var(--muted)">Descuento</span><span>-$${descuento}</span></div>` : ""}
+          <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:4px;border-top:1px solid #2a3252;font-size:16px;font-weight:600"><span>Total Anual</span><span style="color:var(--gold)">$${anual || "-"}</span></div>
+        </div>
+      ` : ""}
+      ${tablaCoberturas}
+      ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" style="display:block;text-align:center;margin-top:14px;background:var(--gold);color:var(--navy);padding:12px;border-radius:6px;text-decoration:none;font-weight:600">Ver / descargar PDF</a>` : ""}
+    `;
+  } catch (err) {
+    estado.className = "error";
+    estado.textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
